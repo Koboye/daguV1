@@ -1124,49 +1124,79 @@ const InboxPage = ({ users, currentUser, showToast }) => {
   };
 
   if (activeConversation) {
-    const convo = conversations.find(c => c.userId === activeConversation);
-    const otherUser = users.find(u => u.id === activeConversation);
-    return <ConversationView currentUser={currentUser} otherUser={otherUser} messages={convo?.messages || []} onSend={(text, vb, af) => sendMessage(activeConversation, text, vb, af)} onBack={() => setActiveConversation(null)} showToast={showToast} />;
-  }
+   const ConversationView = ({ currentUser, otherUser, onBack, showToast }) => {
+  const [text, setText] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [showEmoji, setShowEmoji] = useState(false);
+  const messagesEndRef = useRef(null);
+  const chatId = [currentUser?.id, otherUser?.id].sort().join('_');
+
+  useEffect(() => {
+    if (!chatId) return;
+    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('timestamp', 'asc'));
+    const unsub = onSnapshot(q, snap => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [chatId]);
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  const handleSend = async () => {
+    if (!text.trim()) return;
+    try {
+      await addDoc(collection(db, 'chats', chatId, 'messages'), {
+        text,
+        from: currentUser?.id,
+        fromUsername: currentUser?.username,
+        timestamp: serverTimestamp(),
+      });
+      setText('');
+    } catch (err) {
+      showToast?.('Failed to send', 'error');
+    }
+  };
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
-      <div style={{ padding: '16px 16px', borderBottom: '1px solid #1a1a1a' }}>
-        <h2 style={{ color: 'white', fontSize: 20, fontWeight: 700 }}>💬 Messages</h2>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={onBack} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '7px 12px', color: 'white', cursor: 'pointer', fontSize: 13 }}>←</button>
+        <div style={{ width: 38, height: 38, borderRadius: '50%', background: otherUser?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', overflow: 'hidden' }}>
+          {otherUser?.photoURL ? <img src={otherUser.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : otherUser?.avatar}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: 'white', fontWeight: 600 }}>@{otherUser?.username}</div>
+          <div style={{ color: '#06d6a0', fontSize: 11 }}>● Online</div>
+        </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {users.filter(u => u.id !== currentUser?.id).map(u => {
-          const convo = conversations.find(c => c.userId === u.id);
-          const lastMsg = convo?.messages?.[convo.messages.length - 1];
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {messages.length === 0 && <div style={{ textAlign: 'center', color: '#444', fontSize: 13, marginTop: 40 }}>Say hello to @{otherUser?.username}! 👋</div>}
+        {messages.map(msg => {
+          const isMe = msg.from === currentUser?.id;
           return (
-            <div key={u.id} onClick={() => openConvo(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: '1px solid #111', cursor: 'pointer' }}>
-              <div style={{ position: 'relative' }}>
-                <div style={{ width: 48, height: 48, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 20 }}>{u.avatar}</div>
-                <div style={{ position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, background: '#06d6a0', borderRadius: '50%', border: '2px solid #0a0a0a' }} />
+            <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+              <div style={{ background: isMe ? '#ff2d55' : '#1a1a1a', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', maxWidth: '75%' }}>
+                {msg.text && <div style={{ color: 'white', fontSize: 13 }}>{msg.text}</div>}
+                <div style={{ color: isMe ? 'rgba(255,255,255,0.5)' : '#444', fontSize: 9, marginTop: 4, textAlign: 'right' }}>{msg.timestamp?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'now'}</div>
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>@{u.username}</div>
-                <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>{lastMsg ? lastMsg.text || (lastMsg.voiceBlob ? '🎙️ Voice message' : '📎 File') : 'Tap to start chatting'}</div>
-              </div>
-              <div style={{ color: '#444', fontSize: 10 }}>{convo?.lastSeen?.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>
             </div>
           );
         })}
+        <div ref={messagesEndRef} />
+      </div>
+      {showEmoji && (
+        <div style={{ background: '#161616', padding: 10, display: 'flex', flexWrap: 'wrap', gap: 6, borderTop: '1px solid #222' }}>
+          {EMOJI_LIST.map(e => <button key={e} onClick={() => setText(p => p + e)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: 2 }}>{e}</button>)}
+        </div>
+      )}
+      <div style={{ padding: '10px 12px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button onClick={() => setShowEmoji(p => !p)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 17, cursor: 'pointer' }}>😊</button>
+        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Message..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 22, padding: '9px 14px', color: 'white', outline: 'none', fontSize: 13 }} />
+        <button onClick={handleSend} style={{ background: '#ff2d55', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', cursor: 'pointer', fontSize: 17 }}>↑</button>
       </div>
     </div>
   );
 };
-
-const ConversationView = ({ currentUser, otherUser, messages, onSend, onBack, showToast }) => {
-  const [text, setText] = useState('');
-  const [voiceBlob, setVoiceBlob] = useState(null);
-  const [attachedFile, setAttachedFile] = useState(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [showEmoji, setShowEmoji] = useState(false);
-  const recorderRef = useRef(null);
-  const chunksRef = useRef([]);
-  const fileInputRef = useRef(null);
-  const messagesEndRef = useRef(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
