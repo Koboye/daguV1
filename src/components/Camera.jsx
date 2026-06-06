@@ -3,11 +3,12 @@ import { db, storage, auth } from "../firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
-export default function Camera() {
+export default function Camera({ onClose }) {
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
+  const timerRef = useRef(null);
 
   const [hasPermission, setHasPermission] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -20,272 +21,100 @@ export default function Camera() {
   const [facingMode, setFacingMode] = useState("user");
   const [error, setError] = useState("");
   const [recordingTime, setRecordingTime] = useState(0);
-  const timerRef = useRef(null);
 
-  // Start camera on mount or when facingMode changes
-  useEffect(() => {
-    startCamera();
-    return () => stopCamera();
-  }, [facingMode]);
+  useEffect(() => { startCamera(); return () => stopCamera(); }, [facingMode]);
 
   const startCamera = async () => {
-    stopCamera();
-    setError("");
+    stopCamera(); setError("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode },
-        audio: true,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      if (videoRef.current) videoRef.current.srcObject = stream;
       setHasPermission(true);
     } catch (err) {
       setHasPermission(false);
-      if (err.name === "NotAllowedError") {
-        setError("Camera permission denied. Please allow camera access in your browser settings.");
-      } else if (err.name === "NotFoundError") {
-        setError("No camera found on this device.");
-      } else {
-        setError("Could not access camera: " + err.message);
-      }
+      setError(err.name === "NotAllowedError" ? "Camera permission denied. Please allow camera access in your browser settings." : err.name === "NotFoundError" ? "No camera found on this device." : "Could not access camera: " + err.message);
     }
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  };
+  const stopCamera = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
 
   const startRecording = () => {
     if (!streamRef.current) return;
-    chunksRef.current = [];
-    setRecordedBlob(null);
-    setRecordedURL(null);
-    setUploaded(false);
-    setRecordingTime(0);
-
-    const mediaRecorder = new MediaRecorder(streamRef.current);
-    mediaRecorderRef.current = mediaRecorder;
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
-
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: "video/webm" });
-      setRecordedBlob(blob);
-      setRecordedURL(URL.createObjectURL(blob));
-    };
-
-    mediaRecorder.start();
-    setIsRecording(true);
-
-    // Timer
-    timerRef.current = setInterval(() => {
-      setRecordingTime((t) => {
-        if (t >= 59) {
-          stopRecording();
-          return 60;
-        }
-        return t + 1;
-      });
-    }, 1000);
+    chunksRef.current = []; setRecordedBlob(null); setRecordedURL(null); setUploaded(false); setRecordingTime(0);
+    const recorder = new MediaRecorder(streamRef.current);
+    mediaRecorderRef.current = recorder;
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.onstop = () => { const blob = new Blob(chunksRef.current, { type: "video/webm" }); setRecordedBlob(blob); setRecordedURL(URL.createObjectURL(blob)); };
+    recorder.start(); setIsRecording(true);
+    timerRef.current = setInterval(() => { setRecordingTime(t => { if (t >= 59) { stopRecording(); return 60; } return t + 1; }); }, 1000);
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerRef.current);
-    }
-  };
-
-  const discardRecording = () => {
-    setRecordedBlob(null);
-    setRecordedURL(null);
-    setCaption("");
-    setUploaded(false);
-    setRecordingTime(0);
-  };
+  const stopRecording = () => { if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); clearInterval(timerRef.current); } };
+  const discard = () => { setRecordedBlob(null); setRecordedURL(null); setCaption(""); setUploaded(false); setRecordingTime(0); };
 
   const uploadVideo = async () => {
-    if (!recordedBlob || !auth.currentUser) return;
-    setUploading(true);
-    setUploadProgress(0);
-
+    if (!recordedBlob || !auth.currentUser) { setError("You must be logged in to post."); return; }
+    setUploading(true); setUploadProgress(0);
     try {
       const fileName = `videos/${auth.currentUser.uid}_${Date.now()}.webm`;
       const storageRef = ref(storage, fileName);
-      const uploadTask = uploadBytesResumable(storageRef, recordedBlob);
-
-      uploadTask.on(
-        "state_changed",
-        (snapshot) => {
-          const progress = Math.round(
-            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-          );
-          setUploadProgress(progress);
-        },
-        (err) => {
-          setError("Upload failed: " + err.message);
-          setUploading(false);
-        },
+      const task = uploadBytesResumable(storageRef, recordedBlob);
+      task.on("state_changed",
+        snap => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+        err => { setError("Upload failed: " + err.message); setUploading(false); },
         async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          await addDoc(collection(db, "videos"), {
-            url: downloadURL,
-            caption: caption.trim(),
-            userId: auth.currentUser.uid,
-            likes: [],
-            comments: [],
-            createdAt: serverTimestamp(),
-          });
-          setUploaded(true);
-          setUploading(false);
-          discardRecording();
+          const url = await getDownloadURL(task.snapshot.ref);
+          await addDoc(collection(db, "videos"), { url, videoUrl: url, caption: caption.trim(), userId: auth.currentUser.uid, likes: [], comments: [], createdAt: serverTimestamp() });
+          setUploaded(true); setUploading(false);
+          setTimeout(() => { discard(); onClose?.(); }, 1500);
         }
       );
-    } catch (err) {
-      setError("Upload failed: " + err.message);
-      setUploading(false);
-    }
+    } catch (err) { setError("Upload failed: " + err.message); setUploading(false); }
   };
 
-  const flipCamera = () => {
-    setFacingMode((prev) => (prev === "user" ? "environment" : "user"));
-  };
+  const fmt = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
 
-  const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  if (hasPermission === false) return (
+    <div style={{minHeight:"100vh",background:"#000",color:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+      <div style={{fontSize:64,marginBottom:16}}>📵</div>
+      <h2 style={{fontSize:20,fontWeight:700,marginBottom:8}}>Camera Access Denied</h2>
+      <p style={{color:"#888",fontSize:14,marginBottom:24}}>{error}</p>
+      <button onClick={startCamera} style={{background:"#ff2d55",border:"none",borderRadius:24,padding:"12px 28px",color:"#fff",fontWeight:700,cursor:"pointer",marginBottom:12}}>Try Again</button>
+      <button onClick={onClose} style={{background:"#222",border:"none",borderRadius:24,padding:"12px 28px",color:"#fff",cursor:"pointer"}}>Cancel</button>
+    </div>
+  );
 
-  // PERMISSION DENIED
-  if (hasPermission === false) {
-    return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="text-6xl mb-4">📵</div>
-        <h2 className="text-xl font-bold mb-2">Camera Access Denied</h2>
-        <p className="text-gray-400 text-sm mb-6">{error}</p>
-        <button
-          onClick={startCamera}
-          className="bg-red-600 px-6 py-3 rounded-xl font-bold hover:bg-red-700 transition"
-        >
-          Try Again
-        </button>
+  if (recordedURL) return (
+    <div style={{minHeight:"100vh",background:"#000",color:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <h2 style={{fontSize:18,fontWeight:700,marginBottom:16}}>Preview Your Video</h2>
+      <video src={recordedURL} controls autoPlay style={{width:"100%",maxWidth:380,borderRadius:20,border:"1px solid #222",marginBottom:16}} />
+      <input type="text" placeholder="Add a caption..." value={caption} onChange={e=>setCaption(e.target.value)} style={{width:"100%",maxWidth:380,background:"#1a1a1a",border:"1px solid #333",borderRadius:16,padding:"12px 16px",color:"#fff",outline:"none",fontSize:14,marginBottom:16,boxSizing:"border-box"}} />
+      {uploading && <div style={{width:"100%",maxWidth:380,marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",color:"#888",fontSize:12,marginBottom:6}}><span>Uploading...</span><span>{uploadProgress}%</span></div><div style={{background:"#222",borderRadius:8,height:6}}><div style={{background:"#ff2d55",height:6,borderRadius:8,width:`${uploadProgress}%`,transition:"width 0.3s"}} /></div></div>}
+      {uploaded && <p style={{color:"#06d6a0",fontWeight:700,marginBottom:16}}>✅ Posted successfully!</p>}
+      {error && <p style={{color:"#ff2d55",fontSize:13,marginBottom:12}}>{error}</p>}
+      <div style={{display:"flex",gap:12,width:"100%",maxWidth:380}}>
+        <button onClick={discard} style={{flex:1,background:"#222",border:"none",borderRadius:20,padding:"14px",color:"#fff",fontWeight:700,cursor:"pointer"}}>🗑️ Discard</button>
+        <button onClick={uploadVideo} disabled={uploading} style={{flex:1,background:"#ff2d55",border:"none",borderRadius:20,padding:"14px",color:"#fff",fontWeight:700,cursor:"pointer",opacity:uploading?0.6:1}}>{uploading?"Uploading...":"⬆️ Post"}</button>
       </div>
-    );
-  }
+      <button onClick={onClose} style={{marginTop:12,background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:13}}>Cancel</button>
+    </div>
+  );
 
-  // PREVIEW RECORDED VIDEO
-  if (recordedURL) {
-    return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
-        <h2 className="text-lg font-bold mb-4">Preview Your Video</h2>
-        <video
-          src={recordedURL}
-          controls
-          autoPlay
-          className="w-full max-w-sm rounded-2xl mb-4 border border-gray-800"
-        />
-        <input
-          type="text"
-          placeholder="Add a caption..."
-          className="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-xl p-3 text-sm text-white outline-none focus:border-red-500 mb-4"
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-        />
-        {uploading && (
-          <div className="w-full max-w-sm mb-4">
-            <div className="flex justify-between text-xs text-gray-400 mb-1">
-              <span>Uploading...</span>
-              <span>{uploadProgress}%</span>
-            </div>
-            <div className="w-full bg-gray-800 rounded-full h-2">
-              <div
-                className="bg-red-500 h-2 rounded-full transition-all"
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
-          </div>
-        )}
-        {uploaded && (
-          <p className="text-green-400 font-bold mb-4">✅ Video uploaded successfully!</p>
-        )}
-        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-        <div className="flex gap-3 w-full max-w-sm">
-          <button
-            onClick={discardRecording}
-            className="flex-1 bg-gray-800 py-3 rounded-xl font-bold hover:bg-gray-700 transition"
-          >
-            🗑️ Discard
-          </button>
-          <button
-            onClick={uploadVideo}
-            disabled={uploading}
-            className="flex-1 bg-red-600 py-3 rounded-xl font-bold hover:bg-red-700 transition disabled:opacity-50"
-          >
-            {uploading ? "Uploading..." : "⬆️ Post Video"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // MAIN CAMERA VIEW
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center relative">
-      {/* Camera Preview */}
-      <div className="relative w-full max-w-sm aspect-[9/16] bg-gray-900 rounded-2xl overflow-hidden">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover"
-          style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
-        />
-
-        {/* Recording Timer */}
-        {isRecording && (
-          <div className="absolute top-4 left-0 right-0 flex justify-center">
-            <div className="bg-red-600 px-4 py-1 rounded-full text-sm font-bold flex items-center gap-2 animate-pulse">
-              <span className="w-2 h-2 bg-white rounded-full"></span>
-              REC {formatTime(recordingTime)}
-            </div>
-          </div>
-        )}
-
-        {/* Flip Camera Button */}
-        <button
-          onClick={flipCamera}
-          className="absolute top-4 right-4 bg-black/50 p-2 rounded-full text-white text-xl hover:bg-black/70 transition"
-        >
-          🔄
-        </button>
+    <div style={{minHeight:"100vh",background:"#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative"}}>
+      <button onClick={onClose} style={{position:"absolute",top:20,left:20,background:"rgba(0,0,0,0.6)",border:"none",borderRadius:"50%",width:40,height:40,color:"#fff",fontSize:18,cursor:"pointer",zIndex:10}}>✕</button>
+      <div style={{width:"100%",maxWidth:400,aspectRatio:"9/16",background:"#111",borderRadius:24,overflow:"hidden",position:"relative"}}>
+        <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"cover",transform:facingMode==="user"?"scaleX(-1)":"none"}} />
+        {isRecording && <div style={{position:"absolute",top:16,left:0,right:0,display:"flex",justifyContent:"center"}}><div style={{background:"#ff2d55",borderRadius:20,padding:"6px 14px",display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#fff"}} /><span style={{color:"#fff",fontWeight:700,fontSize:13}}>REC {fmt(recordingTime)}</span></div></div>}
+        <button onClick={()=>setFacingMode(p=>p==="user"?"environment":"user")} style={{position:"absolute",top:16,right:16,background:"rgba(0,0,0,0.5)",border:"none",borderRadius:"50%",width:40,height:40,fontSize:20,cursor:"pointer"}}>🔄</button>
       </div>
-
-      {/* Record Button */}
-      <div className="mt-8 flex flex-col items-center gap-2">
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          className={`w-20 h-20 rounded-full border-4 border-white flex items-center justify-center transition-all ${
-            isRecording
-              ? "bg-red-600 scale-90"
-              : "bg-red-500 hover:bg-red-600 hover:scale-105"
-          }`}
-        >
-          {isRecording ? (
-            <div className="w-8 h-8 bg-white rounded-sm"></div>
-          ) : (
-            <div className="w-12 h-12 bg-red-600 rounded-full"></div>
-          )}
+      <div style={{marginTop:32,display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+        <button onClick={isRecording?stopRecording:startRecording} style={{width:80,height:80,borderRadius:"50%",border:"4px solid #fff",background:"#ff2d55",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          {isRecording?<div style={{width:28,height:28,background:"#fff",borderRadius:4}} />:<div style={{width:50,height:50,background:"#c0001a",borderRadius:"50%"}} />}
         </button>
-        <p className="text-gray-400 text-xs">
-          {isRecording ? "Tap to stop" : "Tap to record"}
-        </p>
-        <p className="text-gray-600 text-xs">Max 60 seconds</p>
+        <p style={{color:"#888",fontSize:12}}>{isRecording?"Tap to stop":"Tap to record"}</p>
+        <p style={{color:"#555",fontSize:11}}>Max 60 seconds</p>
       </div>
     </div>
   );
