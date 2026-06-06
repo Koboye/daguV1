@@ -79,24 +79,20 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 3000, display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', background: '#0f0f0f', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: '85vh', overflowY: 'auto' }}>
-        {/* Close */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
           <button onClick={onClose} style={{ background: '#222', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
-        {/* Avatar & Name */}
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{ width: 90, height: 90, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 36, margin: '0 auto 12px', border: '3px solid #ff2d55' }}>{user?.avatar}</div>
           <div style={{ color: 'white', fontWeight: 700, fontSize: 20 }}>@{user?.username}</div>
           {user?.verified && <div style={{ color: '#1d9bf0', fontSize: 13, marginTop: 2 }}>✓ Verified</div>}
           <div style={{ color: '#888', fontSize: 13, marginTop: 6 }}>{user?.bio}</div>
         </div>
-        {/* Stats */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 32, marginBottom: 20 }}>
           <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 700, fontSize: 18 }}>{user?.followers?.length || 0}</div><div style={{ color: '#666', fontSize: 11 }}>Followers</div></div>
           <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 700, fontSize: 18 }}>{user?.following?.length || 0}</div><div style={{ color: '#666', fontSize: 11 }}>Following</div></div>
           <div style={{ textAlign: 'center' }}><div style={{ color: '#ffd700', fontWeight: 700, fontSize: 18 }}>{user?.level || 1}</div><div style={{ color: '#666', fontSize: 11 }}>Level</div></div>
         </div>
-        {/* Action Buttons */}
         {!isOwn && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
             <button onClick={() => { onFollow?.(user.id); }} style={{ flex: 1, background: isFollowing ? '#222' : '#ff2d55', border: isFollowing ? '1px solid #333' : 'none', borderRadius: 24, padding: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
@@ -111,7 +107,6 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
             <button onClick={() => { onVideoCall?.(user.id); onClose(); }} style={{ flex: 1, background: '#1a1a2a', border: '1px solid #2a2a3a', borderRadius: 20, padding: '10px', color: '#af52de', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>📹 Video Call</button>
           </div>
         )}
-        {/* Subscription Badge */}
         {user?.subscription && user.subscription !== 'free' && (
           <div style={{ marginTop: 16, background: user.subscription === 'pro' ? 'rgba(255,215,0,0.1)' : 'rgba(175,82,222,0.1)', border: `1px solid ${user.subscription === 'pro' ? '#ffd700' : '#af52de'}`, borderRadius: 12, padding: '10px 14px', textAlign: 'center' }}>
             <span style={{ color: user.subscription === 'pro' ? '#ffd700' : '#af52de', fontWeight: 600, fontSize: 13 }}>{user.subscription === 'pro' ? '⭐ PRO Member' : '💎 PLUS Member'}</span>
@@ -139,7 +134,6 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   const streamRef = useRef(null);
   const durationInterval = useRef(null);
 
-  // FIX: Actually open camera on mount
   useEffect(() => {
     const startCamera = async () => {
       try {
@@ -147,7 +141,7 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.muted = true; // mute self-preview
+          videoRef.current.muted = true;
         }
         setCameraActive(true);
       } catch (err) {
@@ -195,7 +189,6 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
-      {/* Camera / Video Area */}
       <div style={{ flex: 2, position: 'relative', background: '#111' }}>
         {cameraActive ? (
           <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -206,7 +199,6 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
             {cameraError && <div style={{ color: '#ff9500', fontSize: 11, textAlign: 'center', padding: '0 20px' }}>{cameraError}</div>}
           </div>
         )}
-        {/* LIVE Badge */}
         <div style={{ position: 'absolute', top: 20, left: 20, background: '#ff2d55', borderRadius: 20, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 10 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'white', animation: 'pulse 1s infinite' }} />
           <span style={{ color: 'white', fontWeight: 700, fontSize: 12 }}>LIVE</span>
@@ -223,7 +215,6 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
           <div key={g.id} style={{ position: 'absolute', left: `${g.x}%`, top: `${g.y}%`, fontSize: 40, animation: 'floatUp 1.5s ease-out forwards', pointerEvents: 'none', zIndex: 20 }}>{g.gift.animation}</div>
         ))}
       </div>
-      {/* Chat */}
       <div style={{ flex: 1, background: '#0a0a0a', display: 'flex', flexDirection: 'column', borderTop: '1px solid #222' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ color: 'white', fontWeight: 700 }}>Live Chat ({chatMessages.length})</span>
@@ -265,63 +256,269 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
 };
 
 // ============================================
-// STORIES
+// FIX 3: STORIES - Now can capture photo/video/text
 // ============================================
-const Stories = ({ users, currentUser, onViewStory }) => {
-  const stories = useMemo(() => users.slice(0, 8).map((user, idx) => ({
-    id: `story_${user.id}`, userId: user.id, username: user.username, avatar: user.avatar, avatarColor: user.avatarColor, viewed: idx > 4, timestamp: new Date(Date.now() - idx * 3600000),
-  })), [users]);
+const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
+  const [storyType, setStoryType] = useState('text'); // 'text', 'photo', 'video'
+  const [storyText, setStoryText] = useState('');
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setShowCamera(true);
+    } catch (err) {
+      showToast?.('Camera access denied', 'error');
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
+      canvas.toBlob(blob => {
+        const file = new File([blob], 'story-photo.jpg', { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        setCapturedImage(url);
+        setSelectedMedia({ file, url, type: 'image/jpeg' });
+        stopCamera();
+      }, 'image/jpeg');
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setSelectedMedia({ file, url, type: file.type });
+    }
+  };
+
+  const handlePost = () => {
+    if (storyType === 'text' && !storyText.trim()) {
+      showToast?.('Please enter some text', 'error');
+      return;
+    }
+    if ((storyType === 'photo' || storyType === 'video') && !selectedMedia) {
+      showToast?.('Please select media first', 'error');
+      return;
+    }
+
+    const newStory = {
+      id: Date.now(),
+      userId: currentUser.id,
+      username: currentUser.username,
+      avatar: currentUser.avatar,
+      avatarColor: currentUser.avatarColor,
+      type: storyType,
+      text: storyText,
+      media: selectedMedia?.url,
+      timestamp: new Date(),
+      viewed: false
+    };
+
+    onPost(newStory);
+    if (selectedMedia?.url) URL.revokeObjectURL(selectedMedia.url);
+    onClose();
+    showToast?.('Story posted! 📸', 'success');
+  };
+
+  useEffect(() => {
+    return () => stopCamera();
+  }, []);
 
   return (
-    <div style={{ padding: '10px 14px', background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', overflowX: 'auto', whiteSpace: 'nowrap' }}>
-      <div style={{ display: 'inline-block', marginRight: 14, textAlign: 'center', cursor: 'pointer' }} onClick={() => onViewStory({ id: currentUser.id, username: currentUser.username, isOwn: true })}>
-        <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,#ff2d55,#af52de)', padding: 2 }}>
-          <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>➕</div>
-        </div>
-        <div style={{ color: '#888', fontSize: 10, marginTop: 3 }}>Your Story</div>
+    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '16px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        <h3 style={{ color: 'white', fontSize: 16 }}>Create Story</h3>
+        <button onClick={handlePost} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', fontWeight: 600, cursor: 'pointer' }}>Post</button>
       </div>
-      {stories.map(story => (
-        <div key={story.id} style={{ display: 'inline-block', marginRight: 14, textAlign: 'center', cursor: 'pointer' }} onClick={() => onViewStory(story)}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: story.viewed ? '#2a2a2a' : 'linear-gradient(135deg,#ff2d55,#af52de)', padding: 2 }}>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: story.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'white' }}>{story.avatar}</div>
+
+      <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid #222' }}>
+        <button onClick={() => { setStoryType('text'); setShowCamera(false); }} style={{ flex: 1, background: storyType === 'text' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>📝 Text</button>
+        <button onClick={() => { setStoryType('photo'); setShowCamera(true); }} style={{ flex: 1, background: storyType === 'photo' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>📸 Photo</button>
+        <button onClick={() => { setStoryType('video'); }} style={{ flex: 1, background: storyType === 'video' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>🎥 Video</button>
+      </div>
+
+      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        {storyType === 'text' && (
+          <textarea
+            value={storyText}
+            onChange={e => setStoryText(e.target.value)}
+            placeholder="What's on your mind?"
+            style={{ width: '100%', height: 200, background: '#141414', border: '1px solid #222', borderRadius: 16, padding: 16, color: 'white', fontSize: 16, outline: 'none', resize: 'none' }}
+            autoFocus
+          />
+        )}
+
+        {(storyType === 'photo' || storyType === 'video') && (
+          <div>
+            {showCamera && !capturedImage ? (
+              <div style={{ position: 'relative' }}>
+                <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: 16 }} />
+                <button onClick={capturePhoto} style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2d55', border: 'none', borderRadius: '50%', width: 60, height: 60, fontSize: 28, cursor: 'pointer' }}>📸</button>
+                <button onClick={stopCamera} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', cursor: 'pointer' }}>✕</button>
+              </div>
+            ) : (
+              <div>
+                {selectedMedia && (
+                  <div style={{ position: 'relative' }}>
+                    {selectedMedia.type.startsWith('image/') ? (
+                      <img src={selectedMedia.url} alt="preview" style={{ width: '100%', borderRadius: 16 }} />
+                    ) : (
+                      <video src={selectedMedia.url} controls style={{ width: '100%', borderRadius: 16 }} />
+                    )}
+                    <button onClick={() => setSelectedMedia(null)} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer' }}>✕</button>
+                  </div>
+                )}
+                <label style={{ display: 'block', textAlign: 'center', padding: 40, background: '#141414', borderRadius: 16, marginTop: 16, cursor: 'pointer' }}>
+                  <div style={{ fontSize: 44 }}>📁</div>
+                  <div style={{ color: '#888', marginTop: 8 }}>Choose from gallery</div>
+                  <input type="file" accept={storyType === 'photo' ? 'image/*' : 'video/*'} onChange={handleFileSelect} style={{ display: 'none' }} />
+                </label>
+                {storyType === 'photo' && !capturedImage && (
+                  <button onClick={startCamera} style={{ width: '100%', marginTop: 12, background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, padding: 12, color: 'white', cursor: 'pointer' }}>
+                    📸 Take a photo
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          <div style={{ color: story.viewed ? '#555' : 'white', fontSize: 10, marginTop: 3 }}>@{story.username}</div>
-        </div>
-      ))}
+        )}
+      </div>
     </div>
+  );
+};
+
+const Stories = ({ users, stories, currentUser, onViewStory, onAddStory }) => {
+  const [showCreateStory, setShowCreateStory] = useState(false);
+  const userStories = stories.filter(s => s.userId === currentUser?.id);
+  const otherStories = stories.filter(s => s.userId !== currentUser?.id);
+  const uniqueUsers = [...new Set(otherStories.map(s => s.userId))].map(uid => users.find(u => u.id === uid)).filter(Boolean);
+
+  return (
+    <>
+      <div style={{ padding: '10px 14px', background: '#0a0a0a', borderBottom: '1px solid #1a1a1a', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'inline-block', marginRight: 14, textAlign: 'center', cursor: 'pointer' }} onClick={() => setShowCreateStory(true)}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,#ff2d55,#af52de)', padding: 2 }}>
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>➕</div>
+          </div>
+          <div style={{ color: '#888', fontSize: 10, marginTop: 3 }}>Your Story</div>
+        </div>
+        {uniqueUsers.map(user => (
+          <div key={user.id} style={{ display: 'inline-block', marginRight: 14, textAlign: 'center', cursor: 'pointer' }} onClick={() => onViewStory(user)}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,#ff2d55,#af52de)', padding: 2 }}>
+              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: user.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'white' }}>{user.avatar}</div>
+            </div>
+            <div style={{ color: 'white', fontSize: 10, marginTop: 3 }}>@{user.username}</div>
+          </div>
+        ))}
+      </div>
+      {showCreateStory && (
+        <CreateStoryModal 
+          onClose={() => setShowCreateStory(false)} 
+          onPost={onAddStory} 
+          currentUser={currentUser} 
+          showToast={showToast}
+        />
+      )}
+    </>
   );
 };
 
 // ============================================
 // STORY VIEWER
 // ============================================
-const StoryViewer = ({ story, user, onClose }) => {
+const StoryViewer = ({ stories, user, currentUser, onClose, onNextUser, onPrevUser }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const userStories = stories.filter(s => s.userId === user?.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const currentStory = userStories[currentIndex];
+
   useEffect(() => {
-    const interval = setInterval(() => setProgress(p => { if (p >= 100) { onClose(); return 0; } return p + 2; }), 50);
+    setProgress(0);
+    setCurrentIndex(0);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!currentStory) return;
+    const interval = setInterval(() => {
+      setProgress(p => {
+        if (p >= 100) {
+          if (currentIndex + 1 < userStories.length) {
+            setCurrentIndex(i => i + 1);
+            return 0;
+          } else {
+            onNextUser?.();
+            return 0;
+          }
+        }
+        return p + 2;
+      });
+    }, 50);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentStory, currentIndex, userStories.length]);
+
+  if (!currentStory) return null;
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ position: 'absolute', top: 20, left: 0, right: 0, padding: '0 16px' }}>
-        <div style={{ height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' }}>
-          <div style={{ width: `${progress}%`, height: '100%', background: '#ff2d55', transition: 'width 0.05s linear' }} />
+    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 1500 }} onClick={onClose}>
+      <div style={{ position: 'absolute', top: 20, left: 0, right: 0, padding: '0 16px', zIndex: 10 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {userStories.map((_, idx) => (
+            <div key={idx} style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ width: idx === currentIndex ? `${progress}%` : idx < currentIndex ? '100%' : '0%', height: '100%', background: '#ff2d55', transition: 'width 0.05s linear' }} />
+            </div>
+          ))}
         </div>
       </div>
-      <div style={{ width: '100%', maxWidth: 380, height: '80vh', background: `linear-gradient(135deg,${user?.avatarColor || '#333'},#000)`, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: 70, marginBottom: 16 }}>📸</div>
-        <div style={{ color: 'white', fontSize: 22, fontWeight: 700 }}>@{user?.username}</div>
+      
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ width: '100%', maxWidth: 400, minHeight: 500, background: `linear-gradient(135deg,${user?.avatarColor || '#333'},#000)`, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          {currentStory.type === 'text' && (
+            <div style={{ fontSize: 28, fontWeight: 700, color: 'white', textAlign: 'center' }}>{currentStory.text}</div>
+          )}
+          {currentStory.type === 'photo' && currentStory.media && (
+            <img src={currentStory.media} alt="story" style={{ width: '100%', borderRadius: 16, maxHeight: '70vh', objectFit: 'contain' }} />
+          )}
+          {currentStory.type === 'video' && currentStory.media && (
+            <video src={currentStory.media} autoPlay style={{ width: '100%', borderRadius: 16, maxHeight: '70vh' }} />
+          )}
+          <div style={{ marginTop: 20, textAlign: 'center' }}>
+            <div style={{ width: 50, height: 50, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 18, margin: '0 auto 8px' }}>{user?.avatar}</div>
+            <div style={{ color: 'white', fontWeight: 600 }}>@{user?.username}</div>
+            <div style={{ color: '#888', fontSize: 11, marginTop: 4 }}>{new Date(currentStory.timestamp).toLocaleTimeString()}</div>
+          </div>
+        </div>
       </div>
-      <button onClick={onClose} style={{ position: 'absolute', top: 40, right: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 38, height: 38, color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+
+      <button onClick={onPrevUser} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>←</button>
+      <button onClick={onNextUser} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>→</button>
+      <button onClick={onClose} style={{ position: 'absolute', top: 40, right: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 38, height: 38, color: 'white', cursor: 'pointer', fontSize: 18, zIndex: 10 }}>✕</button>
     </div>
   );
 };
 
 // ============================================
-// FIX 3: COMMENT WITH VOICE/VIDEO/FILE ATTACHMENT
+// FIX 4: COMMENT WITH VOICE/VIDEO/FILE ATTACHMENT
 // ============================================
-const MediaRecorder_Polyfill = window.MediaRecorder;
-
 const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, showToast }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
@@ -334,7 +531,7 @@ const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, show
   const startVoiceRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder_Polyfill(stream);
+      const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = e => chunksRef.current.push(e.data);
       recorder.onstop = () => {
@@ -377,7 +574,6 @@ const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, show
           {EMOJI_LIST.map(e => <button key={e} onClick={() => { setCommentText(p => p + e); setShowEmojiPicker(false); }} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: 2 }}>{e}</button>)}
         </div>
       )}
-      {/* Attached preview */}
       {(voiceBlob || attachedFile) && (
         <div style={{ background: '#161616', borderRadius: 10, padding: 8, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
           {voiceBlob && <><span>🎙️</span><audio src={URL.createObjectURL(voiceBlob)} controls style={{ flex: 1, height: 28 }} /></>}
@@ -387,10 +583,8 @@ const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, show
       )}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <button onClick={() => setShowEmojiPicker(p => !p)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }}>😊</button>
-        {/* FIX: voice record button */}
         <button onMouseDown={startVoiceRecording} onMouseUp={stopVoiceRecording} onTouchStart={startVoiceRecording} onTouchEnd={stopVoiceRecording}
           style={{ background: isRecordingVoice ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }} title="Hold to record voice">🎙️</button>
-        {/* FIX: file attach button */}
         <button onClick={() => fileInputRef.current?.click()} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }} title="Attach file">📎</button>
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={handleFileAttach} style={{ display: 'none' }} />
         <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Add a comment..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 20, padding: '8px 12px', color: 'white', outline: 'none', fontSize: 13 }} />
@@ -510,15 +704,12 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 50%)', pointerEvents: 'none' }} />
       {hearts.map(h => (<div key={h.id} style={{ position: 'absolute', left: h.x - 25, top: h.y - 25, fontSize: 46, zIndex: 100, pointerEvents: 'none', animation: 'heartBurst 1s ease-out forwards' }}>❤️</div>))}
 
-      {/* Creator Info — FIX: clicking avatar/username opens profile */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 68, padding: '18px 14px', zIndex: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          {/* FIX: clickable avatar opens user profile */}
           <div onClick={() => onViewProfile?.(video.userId)} style={{ position: 'relative', cursor: 'pointer' }}>
             <div style={{ width: 42, height: 42, borderRadius: '50%', background: video.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 16, border: '2px solid rgba(255,255,255,0.4)' }}>{video.avatar}</div>
             {video.verified && <div style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, background: '#1d9bf0', borderRadius: '50%', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>✓</div>}
           </div>
-          {/* FIX: clickable username opens user profile */}
           <span onClick={() => onViewProfile?.(video.userId)} style={{ color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>@{video.username}</span>
           <button onClick={() => onFollow?.(video.userId)} style={{ padding: '5px 14px', borderRadius: 20, background: followed?.includes(video.userId) ? 'transparent' : '#ff2d55', border: followed?.includes(video.userId) ? '1px solid rgba(255,255,255,0.4)' : 'none', color: 'white', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{followed?.includes(video.userId) ? 'Following' : '+ Follow'}</button>
           <button onClick={() => setShowActionMenu(!showActionMenu)} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '4px 10px', color: 'white', cursor: 'pointer', fontSize: 16 }}>•••</button>
@@ -531,7 +722,6 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
         </div>
       </div>
 
-      {/* Action Menu */}
       {showActionMenu && (
         <div onClick={() => setShowActionMenu(false)} style={{ position: 'absolute', inset: 0, zIndex: 19 }}>
           <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', bottom: 160, left: 14, background: '#181818', border: '1px solid #2a2a2a', borderRadius: 18, padding: 6, zIndex: 20, minWidth: 190 }}>
@@ -542,7 +732,6 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
         </div>
       )}
 
-      {/* Right Side Actions */}
       <div style={{ position: 'absolute', right: 10, bottom: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, zIndex: 6 }}>
         <button onClick={() => { if (!liked) { setLiked(true); setLikeCount(p => p + 1); onLike?.(video.id); } }} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{liked ? '❤️' : '🤍'}</button>
         <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>{formatNumber(likeCount)}</span>
@@ -553,7 +742,6 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
         <button onClick={() => onViewProfile?.(video.userId)} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 22, cursor: 'pointer' }}>👤</button>
       </div>
 
-      {/* Comments Drawer with voice/file attachment */}
       {showComments && (
         <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -624,7 +812,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
 };
 
 // ============================================
-// FIX 4: WALLET — fully functional
+// WALLET — fully functional
 // ============================================
 const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -671,7 +859,6 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
         <button onClick={onBack} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', cursor: 'pointer', fontSize: 12, marginBottom: 16 }}>← Back</button>
         <h2 style={{ color: 'white', marginBottom: 16, fontSize: 20, fontWeight: 700 }}>💰 Wallet</h2>
 
-        {/* Balance Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           <div style={{ background: 'linear-gradient(135deg,#ffd700,#ff9500)', borderRadius: 20, padding: 18 }}>
             <div style={{ color: 'rgba(0,0,0,0.6)', fontSize: 11 }}>Coins Balance</div>
@@ -685,7 +872,6 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
           </div>
         </div>
 
-        {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: '#161616', borderRadius: 16, padding: 4 }}>
           {['overview','deposit','withdraw','convert'].map(t => (
             <button key={t} onClick={() => setActiveTab(t)} style={{ flex: 1, background: activeTab === t ? '#ff2d55' : 'none', border: 'none', borderRadius: 12, padding: '8px 4px', color: 'white', cursor: 'pointer', fontSize: 11, fontWeight: activeTab === t ? 700 : 400, textTransform: 'capitalize' }}>{t}</button>
@@ -718,7 +904,6 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
                 <input type="number" placeholder="Enter amount..." value={amount} onChange={e => setAmount(e.target.value)} style={{ flex: 1, background: '#0d0d0d', border: '1px solid #222', borderRadius: 12, padding: '12px', color: 'white', outline: 'none', fontSize: 15 }} />
                 <span style={{ color: '#888', alignSelf: 'center' }}>🪙</span>
               </div>
-              {/* Quick amounts */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 {[100,500,1000,5000].map(v => (
                   <button key={v} onClick={() => setAmount(String(v))} style={{ flex: 1, background: amount === String(v) ? '#ff2d55' : '#222', border: 'none', borderRadius: 10, padding: '8px', color: 'white', cursor: 'pointer', fontSize: 12 }}>{v}</button>
@@ -736,7 +921,7 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
 };
 
 // ============================================
-// PROFILE PAGE — with working wallet and subpages
+// PROFILE PAGE
 // ============================================
 const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowAnalytics, onShowQRCode }) => {
   const [activeSubPage, setActiveSubPage] = useState(null);
@@ -865,7 +1050,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
 };
 
 // ============================================
-// FIX 5: INBOX — fully working messaging with voice/video/file
+// INBOX — messaging with voice/video/file
 // ============================================
 const InboxPage = ({ users, currentUser, showToast }) => {
   const [activeConversation, setActiveConversation] = useState(null);
@@ -971,7 +1156,6 @@ const ConversationView = ({ currentUser, otherUser, messages, onSend, onBack, sh
           <div style={{ color: '#06d6a0', fontSize: 11 }}>● Online</div>
         </div>
       </div>
-      {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {messages.length === 0 && <div style={{ textAlign: 'center', color: '#444', fontSize: 13, marginTop: 40 }}>Say hello to @{otherUser?.username}! 👋</div>}
         {messages.map(msg => {
@@ -991,13 +1175,11 @@ const ConversationView = ({ currentUser, otherUser, messages, onSend, onBack, sh
         })}
         <div ref={messagesEndRef} />
       </div>
-      {/* Emoji picker */}
       {showEmoji && (
         <div style={{ background: '#161616', padding: 10, display: 'flex', flexWrap: 'wrap', gap: 6, borderTop: '1px solid #222' }}>
           {EMOJI_LIST.map(e => <button key={e} onClick={() => { setText(p => p + e); }} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: 2 }}>{e}</button>)}
         </div>
       )}
-      {/* Attached preview */}
       {(voiceBlob || attachedFile) && (
         <div style={{ background: '#161616', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #222' }}>
           {voiceBlob && <><span>🎙️</span><audio src={URL.createObjectURL(voiceBlob)} controls style={{ flex: 1, height: 28 }} /></>}
@@ -1005,7 +1187,6 @@ const ConversationView = ({ currentUser, otherUser, messages, onSend, onBack, sh
           <button onClick={() => { setVoiceBlob(null); setAttachedFile(null); }} style={{ background: '#333', border: 'none', borderRadius: '50%', width: 22, height: 22, color: 'white', cursor: 'pointer', fontSize: 12 }}>✕</button>
         </div>
       )}
-      {/* Input row */}
       <div style={{ padding: '10px 12px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: 6, alignItems: 'center' }}>
         <button onClick={() => setShowEmoji(p => !p)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 17, cursor: 'pointer' }}>😊</button>
         <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{ background: isRecording ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 17, cursor: 'pointer' }} title="Hold to record">🎙️</button>
@@ -1396,6 +1577,7 @@ export default function DaguFixedApp() {
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [videos, setVideos] = useState([]);
+  const [stories, setStories] = useState([]);
   const [friends, setFriends] = useState([]);
   const [activeTab, setActiveTab] = useState('home');
   const [toast, setToast] = useState(null);
@@ -1409,6 +1591,8 @@ export default function DaguFixedApp() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [followed, setFollowed] = useState([]);
   const [viewingProfile, setViewingProfile] = useState(null);
+  const [storyViewerUser, setStoryViewerUser] = useState(null);
+  const [storyUsers, setStoryUsers] = useState([]);
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
@@ -1429,13 +1613,76 @@ export default function DaguFixedApp() {
   }, []);
 
   const handleLogin = (identifier, password) => {
-    const user = users.find(u => u.email === identifier);
-    if (user) { setCurrentUser(user); showToast(`Welcome back, @${user.username}! 👋`, 'success'); }
-    else { showToast('Logging in as demo user', 'info'); setCurrentUser(users[0]); }
+    // Check if user exists with this email
+    let user = users.find(u => u.email === identifier);
+    
+    if (user) {
+      // Login existing user
+      setCurrentUser(user);
+      showToast(`Welcome back, @${user.username}! 👋`, 'success');
+    } else if (!user && !identifier.includes('@example.com')) {
+      // Create NEW user for custom email
+      const newUsername = identifier.split('@')[0];
+      const newUser = { 
+        id: `u${Date.now()}`, 
+        username: newUsername, 
+        email: identifier, 
+        avatar: newUsername[0].toUpperCase(), 
+        avatarColor: `hsl(${Math.random()*360},70%,60%)`, 
+        verified: false, 
+        bio: 'New to Dagu! 🎬', 
+        followers: [], 
+        following: [], 
+        coins: 500, 
+        walletBalance: 500, 
+        level: 1, 
+        streak: 1, 
+        subscription: 'free' 
+      };
+      setUsers(prev => [...prev, newUser]);
+      setCurrentUser(newUser);
+      showToast(`Welcome to Dagu, @${newUsername}! 🎉`, 'success');
+    } else {
+      // Demo fallback
+      showToast('Creating new account...', 'info');
+      const newUser = { 
+        id: `u${Date.now()}`, 
+        username: identifier.split('@')[0], 
+        email: identifier, 
+        avatar: identifier[0].toUpperCase(), 
+        avatarColor: `hsl(${Math.random()*360},70%,60%)`, 
+        verified: false, 
+        bio: 'New to Dagu! 🎬', 
+        followers: [], 
+        following: [], 
+        coins: 500, 
+        walletBalance: 500, 
+        level: 1, 
+        streak: 1, 
+        subscription: 'free' 
+      };
+      setUsers(prev => [...prev, newUser]);
+      setCurrentUser(newUser);
+    }
   };
 
   const handleSignup = (identifier, username, fullName, password) => {
-    const newUser = { id: `u${Date.now()}`, username, email: identifier, avatar: username[0].toUpperCase(), avatarColor: `hsl(${Math.random()*360},70%,60%)`, verified: false, bio: 'New to Dagu! 🎬', followers: [], following: [], coins: 500, walletBalance: 500, level: 1, streak: 1, subscription: 'free' };
+    const newUser = { 
+      id: `u${Date.now()}`, 
+      username, 
+      email: identifier, 
+      avatar: username[0].toUpperCase(), 
+      avatarColor: `hsl(${Math.random()*360},70%,60%)`, 
+      verified: false, 
+      bio: 'New to Dagu! 🎬', 
+      followers: [], 
+      following: [], 
+      coins: 500, 
+      walletBalance: 500, 
+      level: 1, 
+      streak: 1, 
+      subscription: 'free' 
+    };
     setUsers(prev => [...prev, newUser]);
     setCurrentUser(newUser);
     showToast(`Welcome to Dagu, @${username}! 🎉`, 'success');
@@ -1451,6 +1698,43 @@ export default function DaguFixedApp() {
 
   const handleMessage = (userId) => {
     setActiveTab('inbox');
+  };
+
+  const handleAddStory = (story) => {
+    setStories(prev => [story, ...prev]);
+  };
+
+  const handleViewStory = (user) => {
+    const userStories = stories.filter(s => s.userId === user.id);
+    if (userStories.length > 0) {
+      setStoryViewerUser(user);
+      setShowStoryViewer(true);
+    } else {
+      showToast('No stories to view', 'info');
+    }
+  };
+
+  const getStoryUsers = () => {
+    const userIds = [...new Set(stories.map(s => s.userId))];
+    return userIds.map(uid => users.find(u => u.id === uid)).filter(Boolean);
+  };
+
+  const storyUserList = getStoryUsers();
+  const currentStoryIndex = storyUserList.findIndex(u => u?.id === storyViewerUser?.id);
+
+  const goToNextStoryUser = () => {
+    if (currentStoryIndex < storyUserList.length - 1) {
+      setStoryViewerUser(storyUserList[currentStoryIndex + 1]);
+    } else {
+      setShowStoryViewer(false);
+      setStoryViewerUser(null);
+    }
+  };
+
+  const goToPrevStoryUser = () => {
+    if (currentStoryIndex > 0) {
+      setStoryViewerUser(storyUserList[currentStoryIndex - 1]);
+    }
   };
 
   if (!currentUser) {
@@ -1481,21 +1765,27 @@ export default function DaguFixedApp() {
         button:active{transform:scale(0.95)}
       `}</style>
 
-      {/* Modals */}
       {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} onClose={() => setShowCall(null)} />}
       {showLiveStream && <LiveStream streamer={showLiveStream} onClose={() => setShowLiveStream(null)} showToast={showToast} currentUser={currentUser} />}
-      {showStoryViewer && <StoryViewer story={showStoryViewer} user={users.find(u => u.id === showStoryViewer.userId) || currentUser} onClose={() => setShowStoryViewer(null)} />}
+      {showStoryViewer && storyViewerUser && (
+        <StoryViewer 
+          stories={stories} 
+          user={storyViewerUser} 
+          currentUser={currentUser} 
+          onClose={() => { setShowStoryViewer(false); setStoryViewerUser(null); }} 
+          onNextUser={goToNextStoryUser}
+          onPrevUser={goToPrevStoryUser}
+        />
+      )}
       {showSoundLibrary && <SoundLibraryPage onSelectSound={s => { showToast?.(`Selected: ${s.name}`, 'success'); setShowSoundLibrary(false); }} onClose={() => setShowSoundLibrary(false)} />}
       {showQRCode && <QRCodePage user={currentUser} onClose={() => setShowQRCode(false)} />}
       {showAnalytics && <CreatorAnalytics user={currentUser} videos={videos} onClose={() => setShowAnalytics(false)} />}
       {viewingProfile && <UserProfileModal user={viewingProfile} currentUser={currentUser} onClose={() => setViewingProfile(null)} onFollow={toggleFollow} onMessage={uid => { handleMessage(uid); setViewingProfile(null); }} onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }} onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }} followed={followed} showToast={showToast} />}
 
-      {/* Stories */}
       {activeTab === 'home' && !showStoryViewer && !showLiveStream && (
-        <Stories users={users} currentUser={currentUser} onViewStory={setShowStoryViewer} />
+        <Stories users={users} stories={stories} currentUser={currentUser} onViewStory={handleViewStory} onAddStory={handleAddStory} showToast={showToast} />
       )}
 
-      {/* Top Bar */}
       {activeTab !== 'profile' && (
         <div style={{ padding: '10px 14px', background: '#0a0a0a', borderBottom: '1px solid #141414', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <button onClick={() => setShowSearch(true)} style={{ flex: 1, background: '#141414', border: '1px solid #1e1e1e', borderRadius: 24, padding: '9px 14px', color: '#555', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
@@ -1505,7 +1795,6 @@ export default function DaguFixedApp() {
         </div>
       )}
 
-      {/* Main Content */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0 }}>
         {showSearch && <SearchOverlay onClose={() => setShowSearch(false)} videos={videos} users={users} onViewProfile={uid => { handleViewProfile(uid); setShowSearch(false); }} />}
         {showCamera && <CameraUpload onUpload={v => { setVideos(prev => [{ ...v, userId: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, avatarColor: currentUser.avatarColor, likes: 0, comments: 0, shares: 0, views: 0, hashtags: [], song: 'Original sound', verified: currentUser.verified, category: 'foryou' }, ...prev]); }} onClose={() => setShowCamera(false)} showToast={showToast} />}
@@ -1567,7 +1856,6 @@ export default function DaguFixedApp() {
         )}
       </div>
 
-      {/* Tab Bar */}
       <div style={{ display: 'flex', background: 'rgba(8,8,8,0.97)', borderTop: '1px solid #161616', padding: '8px 4px 18px', flexShrink: 0, backdropFilter: 'blur(12px)' }}>
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'create') setShowCamera(true); }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0' }}>
@@ -1577,7 +1865,6 @@ export default function DaguFixedApp() {
         ))}
       </div>
 
-      {/* Live Button */}
       {activeTab === 'home' && (
         <button onClick={() => setShowLiveStream(currentUser)} style={{ position: 'absolute', right: 18, bottom: 86, background: '#ff2d55', border: 'none', borderRadius: '50%', width: 50, height: 50, fontSize: 22, cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,45,85,0.5)', zIndex: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔴</button>
       )}
