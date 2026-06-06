@@ -1262,6 +1262,10 @@ const AuthScreen = ({ onLogin, onSignup }) => {
   const [timer, setTimer] = useState(0);
 
 const sendOTP = async () => {
+    if (!identifier) {
+      alert('Please enter your email first!');
+      return;
+    }
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setOtpCode(code);
     setTimer(60);
@@ -1272,10 +1276,10 @@ const sendOTP = async () => {
         { to_email: identifier, otp_code: code },
         'U9fs25Bcx5oQ6A2ru'
       );
-      alert('OTP sent to your email! ✅');
+      alert('✅ OTP sent to ' + identifier + '! Check your inbox.');
     } catch (err) {
-      console.error('Email failed:', err);
-      alert('Failed to send OTP. Try again.');
+      console.error('EmailJS error:', err);
+      alert('❌ Failed to send OTP: ' + err.text);
     }
   };
   const verifyOTP = () => {
