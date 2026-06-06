@@ -1342,8 +1342,12 @@ const sendOTP = async () => {
   };
   useEffect(() => { if (timer > 0) { const i = setInterval(() => setTimer(t => t - 1), 1000); return () => clearInterval(i); } }, [timer]);
   const handleMethodSelect = m => { setSelectedMethod(m); setStep('credentials'); };
-  const handleSubmit = () => {
-    if (selectedMethod?.id === 'email' || selectedMethod?.id === 'phone') { sendOTP(); setStep('otp'); }
+const handleSubmit = () => {
+    if (selectedMethod?.id === 'phone') {
+      alert('📱 Phone login coming soon! Please use Email for now.');
+      return;
+    }
+    if (selectedMethod?.id === 'email') { sendOTP(); setStep('otp'); }
     else { if (isLogin) onLogin(identifier, password); else onSignup(identifier, username, fullName, password); }
   };
 
