@@ -1,4 +1,4 @@
-// DaguFixed.jsx - ALL BUGS FIXED VERSION
+// DaguFixed.jsx - FINAL VERSION WITH FRIENDS VISIBILITY
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 
 const LOGIN_METHODS = [
@@ -33,14 +33,6 @@ const SOUND_LIBRARY = [
   { id: 's5', name: 'Summer Love', artist: 'Pop Hits', duration: '3:02', popular: true, usage: 3456000 },
 ];
 
-const HASHTAGS = [
-  { name: '#fyp', posts: 12500000, trending: true },
-  { name: '#viral', posts: 8900000, trending: true },
-  { name: '#trending', posts: 5600000, trending: true },
-  { name: '#learnontiktok', posts: 3400000, trending: true },
-  { name: '#jobs', posts: 2100000, trending: false },
-];
-
 const CATEGORIES = [
   { id: 'foryou', label: 'For You', icon: '🔥', color: '#ff2d55' },
   { id: 'following', label: 'Following', icon: '👥', color: '#06d6a0' },
@@ -71,7 +63,7 @@ const Toast = ({ message, type, onClose }) => {
 };
 
 // ============================================
-// FIX 1: USER PROFILE MODAL — opens when avatar/username clicked
+// USER PROFILE MODAL
 // ============================================
 const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onVoiceCall, onVideoCall, followed, showToast }) => {
   const isFollowing = followed?.includes(user?.id);
@@ -118,7 +110,7 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
 };
 
 // ============================================
-// FIX 2: LIVE STREAM — now opens real camera
+// LIVE STREAM
 // ============================================
 const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   const [viewers, setViewers] = useState(1234);
@@ -256,10 +248,10 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
 };
 
 // ============================================
-// FIX 3: STORIES - Now can capture photo/video/text
+// CREATE STORY MODAL
 // ============================================
 const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
-  const [storyType, setStoryType] = useState('text'); // 'text', 'photo', 'video'
+  const [storyType, setStoryType] = useState('text');
   const [storyText, setStoryText] = useState('');
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
@@ -354,7 +346,7 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
       <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid #222' }}>
         <button onClick={() => { setStoryType('text'); setShowCamera(false); }} style={{ flex: 1, background: storyType === 'text' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>📝 Text</button>
         <button onClick={() => { setStoryType('photo'); setShowCamera(true); }} style={{ flex: 1, background: storyType === 'photo' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>📸 Photo</button>
-        <button onClick={() => { setStoryType('video'); }} style={{ flex: 1, background: storyType === 'video' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>🎥 Video</button>
+        <button onClick={() => { setStoryType('video'); setShowCamera(false); }} style={{ flex: 1, background: storyType === 'video' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>🎥 Video</button>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
@@ -370,7 +362,7 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
 
         {(storyType === 'photo' || storyType === 'video') && (
           <div>
-            {showCamera && !capturedImage ? (
+            {showCamera && !capturedImage && storyType === 'photo' ? (
               <div style={{ position: 'relative' }}>
                 <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: 16 }} />
                 <button onClick={capturePhoto} style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2d55', border: 'none', borderRadius: '50%', width: 60, height: 60, fontSize: 28, cursor: 'pointer' }}>📸</button>
@@ -393,7 +385,7 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
                   <div style={{ color: '#888', marginTop: 8 }}>Choose from gallery</div>
                   <input type="file" accept={storyType === 'photo' ? 'image/*' : 'video/*'} onChange={handleFileSelect} style={{ display: 'none' }} />
                 </label>
-                {storyType === 'photo' && !capturedImage && (
+                {storyType === 'photo' && !capturedImage && !selectedMedia && (
                   <button onClick={startCamera} style={{ width: '100%', marginTop: 12, background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, padding: 12, color: 'white', cursor: 'pointer' }}>
                     📸 Take a photo
                   </button>
@@ -407,11 +399,12 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
   );
 };
 
-const Stories = ({ users, stories, currentUser, onViewStory, onAddStory }) => {
+const Stories = ({ users, stories, currentUser, onViewStory, onAddStory, showToast }) => {
   const [showCreateStory, setShowCreateStory] = useState(false);
-  const userStories = stories.filter(s => s.userId === currentUser?.id);
-  const otherStories = stories.filter(s => s.userId !== currentUser?.id);
-  const uniqueUsers = [...new Set(otherStories.map(s => s.userId))].map(uid => users.find(u => u.id === uid)).filter(Boolean);
+  
+  // Get unique users who have stories
+  const storyUserIds = [...new Set(stories.map(s => s.userId))];
+  const usersWithStories = storyUserIds.map(uid => users.find(u => u.id === uid)).filter(Boolean);
 
   return (
     <>
@@ -422,7 +415,7 @@ const Stories = ({ users, stories, currentUser, onViewStory, onAddStory }) => {
           </div>
           <div style={{ color: '#888', fontSize: 10, marginTop: 3 }}>Your Story</div>
         </div>
-        {uniqueUsers.map(user => (
+        {usersWithStories.map(user => (
           <div key={user.id} style={{ display: 'inline-block', marginRight: 14, textAlign: 'center', cursor: 'pointer' }} onClick={() => onViewStory(user)}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,#ff2d55,#af52de)', padding: 2 }}>
               <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: user.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'white' }}>{user.avatar}</div>
@@ -509,15 +502,15 @@ const StoryViewer = ({ stories, user, currentUser, onClose, onNextUser, onPrevUs
         </div>
       </div>
 
-      <button onClick={onPrevUser} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>←</button>
-      <button onClick={onNextUser} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>→</button>
+      <button onClick={(e) => { e.stopPropagation(); onPrevUser(); }} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>←</button>
+      <button onClick={(e) => { e.stopPropagation(); onNextUser(); }} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>→</button>
       <button onClick={onClose} style={{ position: 'absolute', top: 40, right: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 38, height: 38, color: 'white', cursor: 'pointer', fontSize: 18, zIndex: 10 }}>✕</button>
     </div>
   );
 };
 
 // ============================================
-// FIX 4: COMMENT WITH VOICE/VIDEO/FILE ATTACHMENT
+// COMMENT INPUT WITH MEDIA
 // ============================================
 const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, showToast }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -594,7 +587,9 @@ const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, show
   );
 };
 
-// Comment Item
+// ============================================
+// COMMENT ITEM
+// ============================================
 const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, showReplyTo, replyText, setReplyText, addReply }) => {
   const [showReplies, setShowReplies] = useState(false);
   return (
@@ -772,10 +767,16 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
 const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('foryou');
+  
   const categoryVideos = useMemo(() => {
-    if (activeCategory === 'following') return videos.filter(v => followed.includes(v.userId));
+    if (activeCategory === 'following') {
+      // Show videos from users that current user follows
+      return videos.filter(v => followed.includes(v.userId));
+    }
+    // Show all videos
     return videos;
   }, [videos, activeCategory, followed]);
+  
   const startY = useRef(null);
   const handleTouchStart = e => { startY.current = e.touches[0].clientY; };
   const handleTouchEnd = e => {
@@ -787,7 +788,23 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
     }
     startY.current = null;
   };
-  if (!categoryVideos.length) return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}><div style={{ fontSize: 48 }}>📭</div><div style={{ color: '#555' }}>No videos</div></div>;
+  
+  if (!categoryVideos.length) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 48 }}>📭</div>
+        <div style={{ color: '#555', textAlign: 'center', padding: 20 }}>
+          {activeCategory === 'following' ? "You're not following anyone yet!" : "No videos available"}
+        </div>
+        {activeCategory === 'following' && (
+          <button onClick={() => setActiveCategory('foryou')} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '10px 20px', color: 'white', cursor: 'pointer' }}>
+            Browse For You
+          </button>
+        )}
+      </div>
+    );
+  }
+  
   return (
     <div style={{ height: '100%', position: 'relative', overflow: 'hidden' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div style={{ position: 'absolute', top: 12, left: 0, right: 0, zIndex: 15, display: 'flex', justifyContent: 'center', gap: 6 }}>
@@ -812,7 +829,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
 };
 
 // ============================================
-// WALLET — fully functional
+// WALLET PAGE
 // ============================================
 const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -1050,7 +1067,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
 };
 
 // ============================================
-// INBOX — messaging with voice/video/file
+// INBOX PAGE
 // ============================================
 const InboxPage = ({ users, currentUser, showToast }) => {
   const [activeConversation, setActiveConversation] = useState(null);
@@ -1462,7 +1479,7 @@ const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onV
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#161616', borderRadius: 24, padding: '8px 14px' }}><span>🔍</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search friend videos..." style={{ flex: 1, background: 'none', border: 'none', color: 'white', outline: 'none', fontSize: 13 }} /></div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {filtered.length === 0 ? <div style={{ textAlign: 'center', padding: 60, color: '#555' }}><div style={{ fontSize: 44, marginBottom: 12 }}>👥</div><div>No friend videos yet</div></div> : (
+        {filtered.length === 0 ? <div style={{ textAlign: 'center', padding: 60, color: '#555' }}><div style={{ fontSize: 44, marginBottom: 12 }}>👥</div><div>No friend videos yet</div><div style={{ fontSize: 12, marginTop: 8, color: '#666' }}>Follow more people to see their posts!</div></div> : (
           <div style={{ padding: 14 }}>
             {filtered.map(video => (
               <div key={video.id} style={{ background: '#141414', borderRadius: 16, marginBottom: 14, overflow: 'hidden', border: '1px solid #1e1e1e' }}>
@@ -1485,7 +1502,7 @@ const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onV
 };
 
 // ============================================
-// SOUND LIBRARY
+// SOUND LIBRARY PAGE
 // ============================================
 const SoundLibraryPage = ({ onSelectSound, onClose }) => {
   const [search, setSearch] = useState('');
@@ -1513,7 +1530,7 @@ const SoundLibraryPage = ({ onSelectSound, onClose }) => {
 };
 
 // ============================================
-// ANALYTICS
+// ANALYTICS PAGE
 // ============================================
 const CreatorAnalytics = ({ user, videos, onClose }) => {
   const userVideos = videos.filter(v => v.userId === user?.id);
@@ -1585,24 +1602,24 @@ export default function DaguFixedApp() {
   const [showCamera, setShowCamera] = useState(false);
   const [showCall, setShowCall] = useState(null);
   const [showLiveStream, setShowLiveStream] = useState(null);
-  const [showStoryViewer, setShowStoryViewer] = useState(null);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [showSoundLibrary, setShowSoundLibrary] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [followed, setFollowed] = useState([]);
   const [viewingProfile, setViewingProfile] = useState(null);
   const [storyViewerUser, setStoryViewerUser] = useState(null);
-  const [storyUsers, setStoryUsers] = useState([]);
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
+  // Initialize demo data
   useEffect(() => {
-    const mockUsers = [
+    const demoUsers = [
       { id: 'u1', username: 'alex_wonders', email: 'alex@example.com', avatar: 'A', avatarColor: '#FF2D55', verified: true, bio: '✨ Content creator & storyteller', followers: ['u2'], following: ['u2'], coins: 5000, walletBalance: 5000, level: 10, streak: 30, subscription: 'pro' },
       { id: 'u2', username: 'jordan_taylor', email: 'jordan@example.com', avatar: 'J', avatarColor: '#00C7BE', verified: false, bio: '📱 Making content every day', followers: ['u1'], following: ['u1'], coins: 1000, walletBalance: 1000, level: 3, streak: 5, subscription: 'free' },
       { id: 'u3', username: 'sam_creates', email: 'sam@example.com', avatar: 'S', avatarColor: '#AF52DE', verified: true, bio: '🎨 Artist & Creator', followers: [], following: [], coins: 3000, walletBalance: 3000, level: 7, streak: 12, subscription: 'plus' },
     ];
-    setUsers(mockUsers);
+    setUsers(demoUsers);
     setFriends(['u2']);
     setFollowed(['u2']);
     setVideos([
@@ -1613,15 +1630,13 @@ export default function DaguFixedApp() {
   }, []);
 
   const handleLogin = (identifier, password) => {
-    // Check if user exists with this email
     let user = users.find(u => u.email === identifier);
     
     if (user) {
-      // Login existing user
       setCurrentUser(user);
       showToast(`Welcome back, @${user.username}! 👋`, 'success');
-    } else if (!user && !identifier.includes('@example.com')) {
-      // Create NEW user for custom email
+    } else {
+      // Create NEW user
       const newUsername = identifier.split('@')[0];
       const newUser = { 
         id: `u${Date.now()}`, 
@@ -1642,27 +1657,6 @@ export default function DaguFixedApp() {
       setUsers(prev => [...prev, newUser]);
       setCurrentUser(newUser);
       showToast(`Welcome to Dagu, @${newUsername}! 🎉`, 'success');
-    } else {
-      // Demo fallback
-      showToast('Creating new account...', 'info');
-      const newUser = { 
-        id: `u${Date.now()}`, 
-        username: identifier.split('@')[0], 
-        email: identifier, 
-        avatar: identifier[0].toUpperCase(), 
-        avatarColor: `hsl(${Math.random()*360},70%,60%)`, 
-        verified: false, 
-        bio: 'New to Dagu! 🎬', 
-        followers: [], 
-        following: [], 
-        coins: 500, 
-        walletBalance: 500, 
-        level: 1, 
-        streak: 1, 
-        subscription: 'free' 
-      };
-      setUsers(prev => [...prev, newUser]);
-      setCurrentUser(newUser);
     }
   };
 
@@ -1689,7 +1683,11 @@ export default function DaguFixedApp() {
   };
 
   const handleLogout = () => { setCurrentUser(null); showToast('Logged out', 'info'); };
-  const toggleFollow = (userId) => setFollowed(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+  
+  const toggleFollow = (userId) => {
+    setFollowed(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+    showToast(followed.includes(userId) ? 'Unfollowed' : 'Followed!', 'success');
+  };
   
   const handleViewProfile = (userId) => {
     const user = users.find(u => u.id === userId);
@@ -1712,6 +1710,10 @@ export default function DaguFixedApp() {
     } else {
       showToast('No stories to view', 'info');
     }
+  };
+
+  const handleAddVideo = (newVideo) => {
+    setVideos(prev => [newVideo, ...prev]);
   };
 
   const getStoryUsers = () => {
@@ -1765,6 +1767,7 @@ export default function DaguFixedApp() {
         button:active{transform:scale(0.95)}
       `}</style>
 
+      {/* Modals */}
       {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} onClose={() => setShowCall(null)} />}
       {showLiveStream && <LiveStream streamer={showLiveStream} onClose={() => setShowLiveStream(null)} showToast={showToast} currentUser={currentUser} />}
       {showStoryViewer && storyViewerUser && (
@@ -1782,10 +1785,12 @@ export default function DaguFixedApp() {
       {showAnalytics && <CreatorAnalytics user={currentUser} videos={videos} onClose={() => setShowAnalytics(false)} />}
       {viewingProfile && <UserProfileModal user={viewingProfile} currentUser={currentUser} onClose={() => setViewingProfile(null)} onFollow={toggleFollow} onMessage={uid => { handleMessage(uid); setViewingProfile(null); }} onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }} onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }} followed={followed} showToast={showToast} />}
 
+      {/* Stories Row */}
       {activeTab === 'home' && !showStoryViewer && !showLiveStream && (
         <Stories users={users} stories={stories} currentUser={currentUser} onViewStory={handleViewStory} onAddStory={handleAddStory} showToast={showToast} />
       )}
 
+      {/* Top Bar */}
       {activeTab !== 'profile' && (
         <div style={{ padding: '10px 14px', background: '#0a0a0a', borderBottom: '1px solid #141414', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <button onClick={() => setShowSearch(true)} style={{ flex: 1, background: '#141414', border: '1px solid #1e1e1e', borderRadius: 24, padding: '9px 14px', color: '#555', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
@@ -1795,9 +1800,10 @@ export default function DaguFixedApp() {
         </div>
       )}
 
+      {/* Main Content */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0 }}>
         {showSearch && <SearchOverlay onClose={() => setShowSearch(false)} videos={videos} users={users} onViewProfile={uid => { handleViewProfile(uid); setShowSearch(false); }} />}
-        {showCamera && <CameraUpload onUpload={v => { setVideos(prev => [{ ...v, userId: currentUser.id, username: currentUser.username, avatar: currentUser.avatar, avatarColor: currentUser.avatarColor, likes: 0, comments: 0, shares: 0, views: 0, hashtags: [], song: 'Original sound', verified: currentUser.verified, category: 'foryou' }, ...prev]); }} onClose={() => setShowCamera(false)} showToast={showToast} />}
+        {showCamera && <CameraUpload onUpload={handleAddVideo} onClose={() => setShowCamera(false)} showToast={showToast} />}
 
         {!showSearch && !showCamera && (
           <>
@@ -1818,7 +1824,10 @@ export default function DaguFixedApp() {
               />
             )}
             {activeTab === 'friends' && (
-              <FriendsFeed friends={friends} videos={videos} currentUser={currentUser}
+              <FriendsFeed 
+                friends={followed} 
+                videos={videos} 
+                currentUser={currentUser}
                 onMessage={handleMessage}
                 onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); }}
                 onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); }}
@@ -1856,6 +1865,7 @@ export default function DaguFixedApp() {
         )}
       </div>
 
+      {/* Tab Bar */}
       <div style={{ display: 'flex', background: 'rgba(8,8,8,0.97)', borderTop: '1px solid #161616', padding: '8px 4px 18px', flexShrink: 0, backdropFilter: 'blur(12px)' }}>
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'create') setShowCamera(true); }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0' }}>
@@ -1865,6 +1875,7 @@ export default function DaguFixedApp() {
         ))}
       </div>
 
+      {/* Live Button */}
       {activeTab === 'home' && (
         <button onClick={() => setShowLiveStream(currentUser)} style={{ position: 'absolute', right: 18, bottom: 86, background: '#ff2d55', border: 'none', borderRadius: '50%', width: 50, height: 50, fontSize: 22, cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,45,85,0.5)', zIndex: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔴</button>
       )}
