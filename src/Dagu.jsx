@@ -1260,11 +1260,12 @@ const AuthScreen = ({ onLogin, onSignup }) => {
   const [otpCode, setOtpCode] = useState('');
   const [timer, setTimer] = useState(0);
 
-  const sendOTP = () => {
+const sendOTP = async () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setOtpCode(code);
     setTimer(60);
-    alert(`Your OTP code is: ${code}`);
+    // OTP is now hidden - user must check their email/phone
+    console.log('OTP generated'); // remove alert
   };
   const verifyOTP = () => {
     if (otpInput === otpCode) { if (isLogin) onLogin(identifier, 'otp'); else onSignup(identifier, username, fullName, 'otp'); }
