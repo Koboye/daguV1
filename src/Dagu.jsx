@@ -1041,10 +1041,43 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
     </div>
   );
 
+  const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
+  const photoInputRef = React.useRef(null);
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'g3c7dwdg');
+      formData.append('cloud_name', 'dotvhzjmc');
+      const res = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/image/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      setCurrentUser(u => ({ ...u, photoURL: data.secure_url }));
+      showToast?.('Profile picture updated! ✅', 'success');
+    } catch (err) {
+      showToast?.('Upload failed. Try again.', 'error');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   return (
     <div style={{ height: '100%', overflow: 'auto', background: '#0a0a0a' }}>
       <div style={{ padding: 20, textAlign: 'center', borderBottom: '1px solid #1a1a1a' }}>
-        <div style={{ width: 80, height: 80, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 32, margin: '0 auto 12px', border: '3px solid #ff2d55' }}>{user?.avatar}</div>
+        <div style={{ position: 'relative', width: 80, margin: '0 auto 12px' }}>
+          <div onClick={() => photoInputRef.current?.click()} style={{ width: 80, height: 80, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 32, border: '3px solid #ff2d55', cursor: 'pointer', overflow: 'hidden' }}>
+            {user?.photoURL ? <img src={user.photoURL} alt="profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user?.avatar}
+          </div>
+          <div onClick={() => photoInputRef.current?.click()} style={{ position: 'absolute', bottom: 0, right: 0, width: 24, height: 24, background: '#ff2d55', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12 }}>📷</div>
+          <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
+          {uploadingPhoto && <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11 }}>...</div>}
+        </div>
         <div style={{ color: 'white', fontWeight: 700, fontSize: 20 }}>@{user?.username}</div>
         <div style={{ color: '#888', fontSize: 13, marginTop: 4 }}>{user?.bio}</div>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 28, marginTop: 16 }}>
