@@ -1,9 +1,18 @@
-// DaguFixed.jsx - FINAL VERSION WITH FRIENDS VISIBILITY
+// Dagu.jsx - FULLY REAL VERSION (no demo/fake data)
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import emailjs from '@emailjs/browser';
 import { db } from './firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs, where, doc, setDoc } from 'firebase/firestore';
+import {
+  collection, addDoc, onSnapshot, query, orderBy,
+  serverTimestamp, getDocs, where, doc, setDoc,
+  updateDoc, arrayUnion, arrayRemove, deleteDoc, getDoc
+} from 'firebase/firestore';
+
 emailjs.init('U9fs25Bcx5oQ6A2ru');
+
+// ============================================
+// CONSTANTS
+// ============================================
 const LOGIN_METHODS = [
   { id: 'facebook', name: 'Facebook', icon: '📘', color: '#1877f2' },
   { id: 'google', name: 'Google', icon: '🌐', color: '#4285f4' },
@@ -51,6 +60,9 @@ const formatNumber = (num) => {
   return num?.toString() || '0';
 };
 
+// Chat ID helper - consistent for any two users
+const getChatId = (uid1, uid2) => [uid1, uid2].sort().join('_');
+
 // ============================================
 // TOAST
 // ============================================
@@ -78,7 +90,9 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
           <button onClick={onClose} style={{ background: '#222', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div style={{ width: 90, height: 90, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 36, margin: '0 auto 12px', border: '3px solid #ff2d55' }}>{user?.avatar}</div>
+          <div style={{ width: 90, height: 90, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 36, margin: '0 auto 12px', border: '3px solid #ff2d55', overflow: 'hidden' }}>
+            {user?.photoURL ? <img src={user.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user?.avatar}
+          </div>
           <div style={{ color: 'white', fontWeight: 700, fontSize: 20 }}>@{user?.username}</div>
           {user?.verified && <div style={{ color: '#1d9bf0', fontSize: 13, marginTop: 2 }}>✓ Verified</div>}
           <div style={{ color: '#888', fontSize: 13, marginTop: 6 }}>{user?.bio}</div>
@@ -90,7 +104,7 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
         </div>
         {!isOwn && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-            <button onClick={() => { onFollow?.(user.id); }} style={{ flex: 1, background: isFollowing ? '#222' : '#ff2d55', border: isFollowing ? '1px solid #333' : 'none', borderRadius: 24, padding: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
+            <button onClick={() => onFollow?.(user.id)} style={{ flex: 1, background: isFollowing ? '#222' : '#ff2d55', border: isFollowing ? '1px solid #333' : 'none', borderRadius: 24, padding: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
               {isFollowing ? '✓ Following' : '+ Follow'}
             </button>
             <button onClick={() => { onMessage?.(user.id); onClose(); }} style={{ flex: 1, background: '#222', border: '1px solid #333', borderRadius: 24, padding: '12px', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>💬 Message</button>
@@ -116,7 +130,7 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
 // LIVE STREAM
 // ============================================
 const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
-  const [viewers, setViewers] = useState(1234);
+  const [viewers, setViewers] = useState(0);
   const [chatMessages, setChatMessages] = useState([]);
   const [message, setMessage] = useState('');
   const [showGiftPicker, setShowGiftPicker] = useState(false);
@@ -127,58 +141,106 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   const [cameraError, setCameraError] = useState(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const durationInterval = useRef(null);
+  const chatEndRef = useRef(null);
+  const liveDocRef = useRef(null);
 
   useEffect(() => {
     const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.muted = true;
-        }
+        if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.muted = true; }
         setCameraActive(true);
-      } catch (err) {
-        setCameraError('Camera access denied. Using simulated stream.');
+      } catch {
+        setCameraError('Camera access denied. Enable camera permission to go live.');
         showToast?.('Camera access denied', 'error');
       }
     };
     startCamera();
-    durationInterval.current = setInterval(() => setDuration(d => d + 1), 1000);
-    const viewerInterval = setInterval(() => setViewers(prev => Math.max(1, prev + Math.floor(Math.random() * 10) - 3)), 5000);
+
+    // Create a live session doc in Firestore
+    const createLiveSession = async () => {
+      const liveRef = await addDoc(collection(db, 'liveStreams'), {
+        userId: currentUser?.id,
+        username: currentUser?.username,
+        avatar: currentUser?.avatar,
+        avatarColor: currentUser?.avatarColor,
+        viewers: 0,
+        startedAt: serverTimestamp(),
+        active: true,
+      });
+      liveDocRef.current = liveRef;
+    };
+    createLiveSession();
+
+    const durationInterval = setInterval(() => setDuration(d => d + 1), 1000);
+
+    // Listen to live chat from Firestore
+    let unsubChat = () => {};
+    const setupChat = async () => {
+      if (!liveDocRef.current) return;
+      unsubChat = onSnapshot(
+        query(collection(db, 'liveStreams', liveDocRef.current.id, 'chat'), orderBy('timestamp')),
+        snap => setChatMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      );
+      // Track viewer count
+      await updateDoc(liveDocRef.current, { viewers: (viewers || 0) + 1 });
+      const unsubLive = onSnapshot(doc(db, 'liveStreams', liveDocRef.current.id), d => {
+        if (d.exists()) setViewers(d.data().viewers || 0);
+      });
+      return unsubLive;
+    };
+    let unsubLive = () => {};
+    setTimeout(async () => { unsubLive = (await setupChat()) || (() => {}); }, 500);
+
     return () => {
-      clearInterval(durationInterval.current);
-      clearInterval(viewerInterval);
+      clearInterval(durationInterval);
+      unsubChat();
+      unsubLive();
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      // Mark stream as ended
+      if (liveDocRef.current) updateDoc(liveDocRef.current, { active: false, endedAt: serverTimestamp() }).catch(() => {});
     };
   }, []);
 
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+
   const toggleMute = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(t => { t.enabled = isMuted; });
-    }
+    if (streamRef.current) streamRef.current.getAudioTracks().forEach(t => { t.enabled = isMuted; });
     setIsMuted(!isMuted);
   };
 
   const formatDuration = () => {
-    const hrs = Math.floor(duration / 3600);
-    const mins = Math.floor((duration % 3600) / 60);
-    const secs = duration % 60;
+    const hrs = Math.floor(duration / 3600), mins = Math.floor((duration % 3600) / 60), secs = duration % 60;
     if (hrs > 0) return `${hrs}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
     return `${mins}:${secs.toString().padStart(2,'0')}`;
   };
 
-  const sendMessage = () => {
-    if (!message.trim()) return;
-    setChatMessages(prev => [...prev, { id: Date.now(), username: currentUser?.username, text: message, timestamp: new Date(), isGift: false }]);
+  const sendMessage = async () => {
+    if (!message.trim() || !liveDocRef.current) return;
+    await addDoc(collection(db, 'liveStreams', liveDocRef.current.id, 'chat'), {
+      username: currentUser?.username,
+      avatar: currentUser?.avatar,
+      text: message,
+      timestamp: serverTimestamp(),
+      isGift: false,
+    });
     setMessage('');
   };
 
-  const sendGift = (gift) => {
+  const sendGift = async (gift) => {
     setGiftAnimations(prev => [...prev, { id: Date.now(), gift, x: Math.random() * 80 + 10, y: Math.random() * 40 + 20 }]);
-    setChatMessages(prev => [...prev, { id: Date.now(), username: currentUser?.username, text: `sent ${gift.name}`, timestamp: new Date(), isGift: true, gift }]);
     showToast?.(`Sent ${gift.name}! 🎁`, 'success');
+    if (liveDocRef.current) {
+      await addDoc(collection(db, 'liveStreams', liveDocRef.current.id, 'chat'), {
+        username: currentUser?.username,
+        avatar: currentUser?.avatar,
+        text: `sent ${gift.name}`,
+        timestamp: serverTimestamp(),
+        isGift: true,
+        gift,
+      });
+    }
     setTimeout(() => setGiftAnimations(prev => prev.slice(1)), 3000);
   };
 
@@ -223,6 +285,7 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
               {msg.isGift && <span style={{ fontSize: 18 }}>{msg.gift?.animation}</span>}
             </div>
           ))}
+          <div ref={chatEndRef} />
         </div>
         <div style={{ padding: 10, borderTop: '1px solid #222', display: 'flex', gap: 8 }}>
           <input value={message} onChange={e => setMessage(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMessage()} placeholder="Say something..." style={{ flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 24, padding: '9px 14px', color: 'white', outline: 'none', fontSize: 13 }} />
@@ -258,7 +321,7 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
   const [storyText, setStoryText] = useState('');
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [capturedImage, setCapturedImage] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
@@ -268,16 +331,11 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setShowCamera(true);
-    } catch (err) {
-      showToast?.('Camera access denied', 'error');
-    }
+    } catch { showToast?.('Camera access denied', 'error'); }
   };
 
   const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
     setShowCamera(false);
   };
 
@@ -288,10 +346,8 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
       canvas.height = videoRef.current.videoHeight;
       canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
       canvas.toBlob(blob => {
-        const file = new File([blob], 'story-photo.jpg', { type: 'image/jpeg' });
         const url = URL.createObjectURL(blob);
-        setCapturedImage(url);
-        setSelectedMedia({ file, url, type: 'image/jpeg' });
+        setSelectedMedia({ file: new File([blob], 'story.jpg', { type: 'image/jpeg' }), url, type: 'image/jpeg' });
         stopCamera();
       }, 'image/jpeg');
     }
@@ -299,73 +355,67 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setSelectedMedia({ file, url, type: file.type });
-    }
+    if (file) setSelectedMedia({ file, url: URL.createObjectURL(file), type: file.type });
   };
 
-  const handlePost = () => {
-    if (storyType === 'text' && !storyText.trim()) {
-      showToast?.('Please enter some text', 'error');
-      return;
-    }
-    if ((storyType === 'photo' || storyType === 'video') && !selectedMedia) {
-      showToast?.('Please select media first', 'error');
-      return;
-    }
-
-    const newStory = {
-      id: Date.now(),
-      userId: currentUser.id,
-      username: currentUser.username,
-      avatar: currentUser.avatar,
-      avatarColor: currentUser.avatarColor,
-      type: storyType,
-      text: storyText,
-      media: selectedMedia?.url,
-      timestamp: new Date(),
-      viewed: false
-    };
-
-    onPost(newStory);
-    if (selectedMedia?.url) URL.revokeObjectURL(selectedMedia.url);
-    onClose();
-    showToast?.('Story posted! 📸', 'success');
+  // Upload media to Cloudinary then save story to Firestore
+  const handlePost = async () => {
+    if (storyType === 'text' && !storyText.trim()) { showToast?.('Enter some text', 'error'); return; }
+    if ((storyType === 'photo' || storyType === 'video') && !selectedMedia) { showToast?.('Select media first', 'error'); return; }
+    setUploading(true);
+    try {
+      let mediaUrl = null;
+      if (selectedMedia) {
+        const formData = new FormData();
+        formData.append('file', selectedMedia.file);
+        formData.append('upload_preset', 'g3c7dwdg');
+        formData.append('cloud_name', 'dotvhzjmc');
+        const res = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/auto/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        mediaUrl = data.secure_url;
+      }
+      const newStory = {
+        userId: currentUser.id,
+        username: currentUser.username,
+        avatar: currentUser.avatar,
+        avatarColor: currentUser.avatarColor,
+        photoURL: currentUser.photoURL || '',
+        type: storyType,
+        text: storyText,
+        media: mediaUrl,
+        timestamp: serverTimestamp(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h TTL
+      };
+      await addDoc(collection(db, 'stories'), newStory);
+      onPost?.({ ...newStory, id: Date.now(), timestamp: new Date() });
+      onClose();
+      showToast?.('Story posted! 📸', 'success');
+    } catch { showToast?.('Failed to post story', 'error'); }
+    finally { setUploading(false); }
   };
 
-  useEffect(() => {
-    return () => stopCamera();
-  }, []);
+  useEffect(() => () => stopCamera(), []);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '16px', borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }}>✕</button>
         <h3 style={{ color: 'white', fontSize: 16 }}>Create Story</h3>
-        <button onClick={handlePost} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', fontWeight: 600, cursor: 'pointer' }}>Post</button>
+        <button onClick={handlePost} disabled={uploading} style={{ background: uploading ? '#555' : '#ff2d55', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', fontWeight: 600, cursor: uploading ? 'default' : 'pointer' }}>{uploading ? '...' : 'Post'}</button>
       </div>
-
       <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid #222' }}>
-        <button onClick={() => { setStoryType('text'); setShowCamera(false); }} style={{ flex: 1, background: storyType === 'text' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>📝 Text</button>
-        <button onClick={() => { setStoryType('photo'); setShowCamera(true); }} style={{ flex: 1, background: storyType === 'photo' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>📸 Photo</button>
-        <button onClick={() => { setStoryType('video'); setShowCamera(false); }} style={{ flex: 1, background: storyType === 'video' ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>🎥 Video</button>
+        {[['text','📝 Text'],['photo','📸 Photo'],['video','🎥 Video']].map(([type, label]) => (
+          <button key={type} onClick={() => { setStoryType(type); if (type === 'photo') startCamera(); }} style={{ flex: 1, background: storyType === type ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 12, padding: '10px', color: 'white', cursor: 'pointer' }}>{label}</button>
+        ))}
       </div>
-
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         {storyType === 'text' && (
-          <textarea
-            value={storyText}
-            onChange={e => setStoryText(e.target.value)}
-            placeholder="What's on your mind?"
-            style={{ width: '100%', height: 200, background: '#141414', border: '1px solid #222', borderRadius: 16, padding: 16, color: 'white', fontSize: 16, outline: 'none', resize: 'none' }}
-            autoFocus
-          />
+          <textarea value={storyText} onChange={e => setStoryText(e.target.value)} placeholder="What's on your mind?" autoFocus
+            style={{ width: '100%', height: 200, background: '#141414', border: '1px solid #222', borderRadius: 16, padding: 16, color: 'white', fontSize: 16, outline: 'none', resize: 'none' }} />
         )}
-
         {(storyType === 'photo' || storyType === 'video') && (
           <div>
-            {showCamera && !capturedImage && storyType === 'photo' ? (
+            {showCamera && storyType === 'photo' ? (
               <div style={{ position: 'relative' }}>
                 <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: 16 }} />
                 <button onClick={capturePhoto} style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2d55', border: 'none', borderRadius: '50%', width: 60, height: 60, fontSize: 28, cursor: 'pointer' }}>📸</button>
@@ -375,11 +425,7 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
               <div>
                 {selectedMedia && (
                   <div style={{ position: 'relative' }}>
-                    {selectedMedia.type.startsWith('image/') ? (
-                      <img src={selectedMedia.url} alt="preview" style={{ width: '100%', borderRadius: 16 }} />
-                    ) : (
-                      <video src={selectedMedia.url} controls style={{ width: '100%', borderRadius: 16 }} />
-                    )}
+                    {selectedMedia.type.startsWith('image/') ? <img src={selectedMedia.url} alt="preview" style={{ width: '100%', borderRadius: 16 }} /> : <video src={selectedMedia.url} controls style={{ width: '100%', borderRadius: 16 }} />}
                     <button onClick={() => setSelectedMedia(null)} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer' }}>✕</button>
                   </div>
                 )}
@@ -388,10 +434,8 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
                   <div style={{ color: '#888', marginTop: 8 }}>Choose from gallery</div>
                   <input type="file" accept={storyType === 'photo' ? 'image/*' : 'video/*'} onChange={handleFileSelect} style={{ display: 'none' }} />
                 </label>
-                {storyType === 'photo' && !capturedImage && !selectedMedia && (
-                  <button onClick={startCamera} style={{ width: '100%', marginTop: 12, background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, padding: 12, color: 'white', cursor: 'pointer' }}>
-                    📸 Take a photo
-                  </button>
+                {storyType === 'photo' && !selectedMedia && (
+                  <button onClick={startCamera} style={{ width: '100%', marginTop: 12, background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, padding: 12, color: 'white', cursor: 'pointer' }}>📸 Take a photo</button>
                 )}
               </div>
             )}
@@ -402,10 +446,11 @@ const CreateStoryModal = ({ onClose, onPost, currentUser, showToast }) => {
   );
 };
 
+// ============================================
+// STORIES ROW
+// ============================================
 const Stories = ({ users, stories, currentUser, onViewStory, onAddStory, showToast }) => {
   const [showCreateStory, setShowCreateStory] = useState(false);
-  
-  // Get unique users who have stories
   const storyUserIds = [...new Set(stories.map(s => s.userId))];
   const usersWithStories = storyUserIds.map(uid => users.find(u => u.id === uid)).filter(Boolean);
 
@@ -421,20 +466,15 @@ const Stories = ({ users, stories, currentUser, onViewStory, onAddStory, showToa
         {usersWithStories.map(user => (
           <div key={user.id} style={{ display: 'inline-block', marginRight: 14, textAlign: 'center', cursor: 'pointer' }} onClick={() => onViewStory(user)}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg,#ff2d55,#af52de)', padding: 2 }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: user.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'white' }}>{user.avatar}</div>
+              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: user.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'white', overflow: 'hidden' }}>
+                {user.photoURL ? <img src={user.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.avatar}
+              </div>
             </div>
             <div style={{ color: 'white', fontSize: 10, marginTop: 3 }}>@{user.username}</div>
           </div>
         ))}
       </div>
-      {showCreateStory && (
-        <CreateStoryModal 
-          onClose={() => setShowCreateStory(false)} 
-          onPost={onAddStory} 
-          currentUser={currentUser} 
-          showToast={showToast}
-        />
-      )}
+      {showCreateStory && <CreateStoryModal onClose={() => setShowCreateStory(false)} onPost={onAddStory} currentUser={currentUser} showToast={showToast} />}
     </>
   );
 };
@@ -445,26 +485,18 @@ const Stories = ({ users, stories, currentUser, onViewStory, onAddStory, showToa
 const StoryViewer = ({ stories, user, currentUser, onClose, onNextUser, onPrevUser }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
-  const userStories = stories.filter(s => s.userId === user?.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const userStories = stories.filter(s => s.userId === user?.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const currentStory = userStories[currentIndex];
 
-  useEffect(() => {
-    setProgress(0);
-    setCurrentIndex(0);
-  }, [user?.id]);
+  useEffect(() => { setProgress(0); setCurrentIndex(0); }, [user?.id]);
 
   useEffect(() => {
     if (!currentStory) return;
     const interval = setInterval(() => {
       setProgress(p => {
         if (p >= 100) {
-          if (currentIndex + 1 < userStories.length) {
-            setCurrentIndex(i => i + 1);
-            return 0;
-          } else {
-            onNextUser?.();
-            return 0;
-          }
+          if (currentIndex + 1 < userStories.length) { setCurrentIndex(i => i + 1); return 0; }
+          else { onNextUser?.(); return 0; }
         }
         return p + 2;
       });
@@ -485,35 +517,28 @@ const StoryViewer = ({ stories, user, currentUser, onClose, onNextUser, onPrevUs
           ))}
         </div>
       </div>
-      
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div style={{ width: '100%', maxWidth: 400, minHeight: 500, background: `linear-gradient(135deg,${user?.avatarColor || '#333'},#000)`, borderRadius: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          {currentStory.type === 'text' && (
-            <div style={{ fontSize: 28, fontWeight: 700, color: 'white', textAlign: 'center' }}>{currentStory.text}</div>
-          )}
-          {currentStory.type === 'photo' && currentStory.media && (
-            <img src={currentStory.media} alt="story" style={{ width: '100%', borderRadius: 16, maxHeight: '70vh', objectFit: 'contain' }} />
-          )}
-          {currentStory.type === 'video' && currentStory.media && (
-            <video src={currentStory.media} autoPlay style={{ width: '100%', borderRadius: 16, maxHeight: '70vh' }} />
-          )}
+          {currentStory.type === 'text' && <div style={{ fontSize: 28, fontWeight: 700, color: 'white', textAlign: 'center' }}>{currentStory.text}</div>}
+          {currentStory.type === 'photo' && currentStory.media && <img src={currentStory.media} alt="story" style={{ width: '100%', borderRadius: 16, maxHeight: '70vh', objectFit: 'contain' }} />}
+          {currentStory.type === 'video' && currentStory.media && <video src={currentStory.media} autoPlay style={{ width: '100%', borderRadius: 16, maxHeight: '70vh' }} />}
           <div style={{ marginTop: 20, textAlign: 'center' }}>
-            <div style={{ width: 50, height: 50, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 18, margin: '0 auto 8px' }}>{user?.avatar}</div>
+            <div style={{ width: 50, height: 50, borderRadius: '50%', background: user?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 18, margin: '0 auto 8px', overflow: 'hidden' }}>
+              {user?.photoURL ? <img src={user.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user?.avatar}
+            </div>
             <div style={{ color: 'white', fontWeight: 600 }}>@{user?.username}</div>
-            <div style={{ color: '#888', fontSize: 11, marginTop: 4 }}>{new Date(currentStory.timestamp).toLocaleTimeString()}</div>
           </div>
         </div>
       </div>
-
-      <button onClick={(e) => { e.stopPropagation(); onPrevUser(); }} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>←</button>
-      <button onClick={(e) => { e.stopPropagation(); onNextUser(); }} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>→</button>
+      <button onClick={e => { e.stopPropagation(); onPrevUser(); }} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>←</button>
+      <button onClick={e => { e.stopPropagation(); onNextUser(); }} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 40, height: 40, color: 'white', cursor: 'pointer', fontSize: 20, zIndex: 10 }}>→</button>
       <button onClick={onClose} style={{ position: 'absolute', top: 40, right: 20, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 38, height: 38, color: 'white', cursor: 'pointer', fontSize: 18, zIndex: 10 }}>✕</button>
     </div>
   );
 };
 
 // ============================================
-// COMMENT INPUT WITH MEDIA
+// COMMENT INPUT
 // ============================================
 const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, showToast }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -530,37 +555,16 @@ const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, show
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = e => chunksRef.current.push(e.data);
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        setVoiceBlob(blob);
-        stream.getTracks().forEach(t => t.stop());
-        showToast?.('Voice recorded!', 'success');
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      setIsRecordingVoice(true);
+      recorder.onstop = () => { setVoiceBlob(new Blob(chunksRef.current, { type: 'audio/webm' })); stream.getTracks().forEach(t => t.stop()); showToast?.('Voice recorded!', 'success'); };
+      recorder.start(); recorderRef.current = recorder; setIsRecordingVoice(true);
     } catch { showToast?.('Microphone access denied', 'error'); }
   };
-
-  const stopVoiceRecording = () => {
-    recorderRef.current?.stop();
-    setIsRecordingVoice(false);
-  };
-
-  const handleFileAttach = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setAttachedFile({ name: file.name, type: file.type, url: URL.createObjectURL(file) });
-      showToast?.(`File attached: ${file.name}`, 'success');
-    }
-  };
-
+  const stopVoiceRecording = () => { recorderRef.current?.stop(); setIsRecordingVoice(false); };
+  const handleFileAttach = e => { const file = e.target.files[0]; if (file) { setAttachedFile({ name: file.name, type: file.type, url: URL.createObjectURL(file) }); showToast?.(`File attached: ${file.name}`, 'success'); } };
   const handleSend = () => {
     if (!commentText.trim() && !voiceBlob && !attachedFile) return;
     onAddComment(commentText, voiceBlob, attachedFile);
-    setCommentText('');
-    setVoiceBlob(null);
-    setAttachedFile(null);
+    setCommentText(''); setVoiceBlob(null); setAttachedFile(null);
   };
 
   return (
@@ -579,9 +583,8 @@ const CommentInputWithMedia = ({ onAddComment, commentText, setCommentText, show
       )}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <button onClick={() => setShowEmojiPicker(p => !p)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }}>😊</button>
-        <button onMouseDown={startVoiceRecording} onMouseUp={stopVoiceRecording} onTouchStart={startVoiceRecording} onTouchEnd={stopVoiceRecording}
-          style={{ background: isRecordingVoice ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }} title="Hold to record voice">🎙️</button>
-        <button onClick={() => fileInputRef.current?.click()} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }} title="Attach file">📎</button>
+        <button onMouseDown={startVoiceRecording} onMouseUp={stopVoiceRecording} onTouchStart={startVoiceRecording} onTouchEnd={stopVoiceRecording} style={{ background: isRecordingVoice ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }}>🎙️</button>
+        <button onClick={() => fileInputRef.current?.click()} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 34, height: 34, fontSize: 16, cursor: 'pointer' }}>📎</button>
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={handleFileAttach} style={{ display: 'none' }} />
         <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Add a comment..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 20, padding: '8px 12px', color: 'white', outline: 'none', fontSize: 13 }} />
         <button onClick={handleSend} disabled={!commentText.trim() && !voiceBlob && !attachedFile} style={{ background: (commentText.trim() || voiceBlob || attachedFile) ? '#ff2d55' : '#222', border: 'none', borderRadius: '50%', width: 34, height: 34, color: 'white', cursor: 'pointer', fontSize: 16 }}>↑</button>
@@ -609,12 +612,6 @@ const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, showReplyTo
               </div>
             </div>
             <p style={{ color: '#ddd', fontSize: 13, marginTop: 4 }}>{comment.text}</p>
-            {comment.voiceBlob && <audio src={URL.createObjectURL(comment.voiceBlob)} controls style={{ width: '100%', height: 28, marginTop: 4 }} />}
-            {comment.attachedFile && (
-              <div style={{ marginTop: 6 }}>
-                {comment.attachedFile.type?.startsWith('image/') ? <img src={comment.attachedFile.url} alt="" style={{ maxWidth: '100%', borderRadius: 8, maxHeight: 100 }} /> : <span style={{ color: '#888', fontSize: 11 }}>📎 {comment.attachedFile.name}</span>}
-              </div>
-            )}
             <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
               <button onClick={() => onReply(comment)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 11 }}>Reply</button>
             </div>
@@ -650,7 +647,7 @@ const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, showReplyTo
 // ============================================
 const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile }) => {
   const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(video.likes);
+  const [likeCount, setLikeCount] = useState(video.likes || 0);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState('');
@@ -662,12 +659,23 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
   const videoRef = useRef(null);
   const lastTap = useRef(0);
 
+  // Load real comments from Firestore
+  useEffect(() => {
+    if (!showComments) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'videos', video.id, 'comments'), orderBy('timestamp', 'desc')),
+      snap => setComments(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, [showComments, video.id]);
+
   const handleDoubleTap = (e) => {
     const now = Date.now();
     if (now - lastTap.current < 300 && !liked) {
       setLiked(true);
       setLikeCount(p => p + 1);
-      onLike?.(video.id);
+      // Update likes in Firestore
+      updateDoc(doc(db, 'videos', video.id), { likes: likeCount + 1 }).catch(() => {});
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       for (let i = 0; i < 8; i++) {
@@ -681,19 +689,28 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
     lastTap.current = now;
   };
 
-  const addComment = (text, voiceBlob, attachedFile) => {
+  const addComment = async (text, voiceBlob, attachedFile) => {
     if (!text.trim() && !voiceBlob && !attachedFile) return;
-    const newComment = { id: Date.now(), username: currentUser?.username, avatar: currentUser?.avatar, avatarColor: currentUser?.avatarColor, text, voiceBlob, attachedFile, likes: 0, replies: [], timestamp: new Date() };
-    setComments(prev => [newComment, ...prev]);
-    onComment?.(video.id, text);
+    const newComment = {
+      username: currentUser?.username,
+      avatar: currentUser?.avatar,
+      avatarColor: currentUser?.avatarColor,
+      text,
+      likes: 0,
+      replies: [],
+      timestamp: serverTimestamp(),
+    };
+    await addDoc(collection(db, 'videos', video.id, 'comments'), newComment);
     showToast?.('Comment added!', 'success');
   };
 
-  const addReply = (commentId) => {
+  const addReply = async (commentId) => {
     if (!replyText.trim()) return;
-    setComments(prev => prev.map(c => c.id === commentId ? { ...c, replies: [...(c.replies || []), { id: Date.now(), username: currentUser?.username, text: replyText }] } : c));
-    setReplyText('');
-    setShowReplyTo(null);
+    const commentRef = doc(db, 'videos', video.id, 'comments', commentId);
+    await updateDoc(commentRef, {
+      replies: arrayUnion({ id: Date.now().toString(), username: currentUser?.username, text: replyText })
+    });
+    setReplyText(''); setShowReplyTo(null);
   };
 
   return (
@@ -705,7 +722,9 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 68, padding: '18px 14px', zIndex: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div onClick={() => onViewProfile?.(video.userId)} style={{ position: 'relative', cursor: 'pointer' }}>
-            <div style={{ width: 42, height: 42, borderRadius: '50%', background: video.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 16, border: '2px solid rgba(255,255,255,0.4)' }}>{video.avatar}</div>
+            <div style={{ width: 42, height: 42, borderRadius: '50%', background: video.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 16, border: '2px solid rgba(255,255,255,0.4)', overflow: 'hidden' }}>
+              {video.photoURL ? <img src={video.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : video.avatar}
+            </div>
             {video.verified && <div style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, background: '#1d9bf0', borderRadius: '50%', fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>✓</div>}
           </div>
           <span onClick={() => onViewProfile?.(video.userId)} style={{ color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>@{video.username}</span>
@@ -715,7 +734,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
         <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, marginBottom: 6 }}>{video.description}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>🎵</span>
-          <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>{video.song}</span>
+          <span style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>{video.song || 'Original sound'}</span>
           <button onClick={() => onSaveSound?.(video.songId)} style={{ marginLeft: 'auto', background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: 12, padding: '4px 8px', color: 'white', fontSize: 10, cursor: 'pointer' }}>Save Sound</button>
         </div>
       </div>
@@ -731,30 +750,35 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
       )}
 
       <div style={{ position: 'absolute', right: 10, bottom: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, zIndex: 6 }}>
-        <button onClick={() => { if (!liked) { setLiked(true); setLikeCount(p => p + 1); onLike?.(video.id); } }} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{liked ? '❤️' : '🤍'}</button>
+        <button onClick={() => { if (!liked) { setLiked(true); setLikeCount(p => p + 1); updateDoc(doc(db, 'videos', video.id), { likes: likeCount + 1 }).catch(() => {}); } }} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{liked ? '❤️' : '🤍'}</button>
         <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>{formatNumber(likeCount)}</span>
         <button onClick={() => setShowComments(true)} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer' }}>💬</button>
-        <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>{formatNumber(video.comments + comments.length)}</span>
+        <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>{formatNumber((video.commentCount || 0) + comments.length)}</span>
         <button onClick={() => { onShare?.(video.id); showToast?.('Share options opened', 'info'); }} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer' }}>↗️</button>
-        <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>{formatNumber(video.shares)}</span>
+        <span style={{ color: 'white', fontSize: 11, fontWeight: 700 }}>{formatNumber(video.shares || 0)}</span>
         <button onClick={() => onViewProfile?.(video.userId)} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 22, cursor: 'pointer' }}>👤</button>
       </div>
 
       {showComments && (
         <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: 'white', fontWeight: 700 }}>💬 Comments ({video.comments + comments.length})</span>
+            <span style={{ color: 'white', fontWeight: 700 }}>💬 Comments ({comments.length})</span>
             <button onClick={() => setShowComments(false)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer', fontSize: 16 }}>✕</button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
             {pinnedComment && (
               <div style={{ background: 'rgba(255,45,85,0.1)', borderRadius: 12, padding: 8, marginBottom: 14, border: '1px solid #ff2d55' }}>
                 <div style={{ color: '#ff2d55', fontSize: 11, fontWeight: 600, marginBottom: 6 }}>📌 Pinned</div>
-                <CommentItem comment={pinnedComment} currentUser={currentUser} onLike={id => setComments(p => p.map(c => c.id === id ? {...c,likes:(c.likes||0)+1} : c))} onReply={c => setShowReplyTo(c)} onPin={() => {}} />
+                <CommentItem comment={pinnedComment} currentUser={currentUser} onLike={() => {}} onReply={() => {}} onPin={() => {}} />
               </div>
             )}
             {comments.map(comment => (
-              <CommentItem key={comment.id} comment={comment} currentUser={currentUser} onLike={id => setComments(p => p.map(c => c.id === id ? {...c,likes:(c.likes||0)+1}:c))} onReply={c => setShowReplyTo(c)} onPin={id => { const c = comments.find(cc=>cc.id===id); if(c){setPinnedComment(c);showToast?.('Pinned!','success');} }} showReplyTo={showReplyTo} replyText={replyText} setReplyText={setReplyText} addReply={addReply} />
+              <CommentItem key={comment.id} comment={comment} currentUser={currentUser}
+                onLike={async id => { await updateDoc(doc(db, 'videos', video.id, 'comments', id), { likes: (comments.find(c=>c.id===id)?.likes||0)+1 }); }}
+                onReply={c => setShowReplyTo(c)}
+                onPin={id => { const c = comments.find(cc => cc.id === id); if (c) { setPinnedComment(c); showToast?.('Pinned!', 'success'); } }}
+                showReplyTo={showReplyTo} replyText={replyText} setReplyText={setReplyText} addReply={addReply}
+              />
             ))}
           </div>
           <CommentInputWithMedia onAddComment={addComment} commentText={commentText} setCommentText={setCommentText} showToast={showToast} />
@@ -770,16 +794,10 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
 const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('foryou');
-  
   const categoryVideos = useMemo(() => {
-    if (activeCategory === 'following') {
-      // Show videos from users that current user follows
-      return videos.filter(v => followed.includes(v.userId));
-    }
-    // Show all videos
+    if (activeCategory === 'following') return videos.filter(v => followed.includes(v.userId));
     return videos;
   }, [videos, activeCategory, followed]);
-  
   const startY = useRef(null);
   const handleTouchStart = e => { startY.current = e.touches[0].clientY; };
   const handleTouchEnd = e => {
@@ -791,23 +809,15 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
     }
     startY.current = null;
   };
-  
   if (!categoryVideos.length) {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontSize: 48 }}>📭</div>
-        <div style={{ color: '#555', textAlign: 'center', padding: 20 }}>
-          {activeCategory === 'following' ? "You're not following anyone yet!" : "No videos available"}
-        </div>
-        {activeCategory === 'following' && (
-          <button onClick={() => setActiveCategory('foryou')} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '10px 20px', color: 'white', cursor: 'pointer' }}>
-            Browse For You
-          </button>
-        )}
+        <div style={{ color: '#555', textAlign: 'center', padding: 20 }}>{activeCategory === 'following' ? "You're not following anyone yet!" : "No videos yet — be the first to post!"}</div>
+        {activeCategory === 'following' && <button onClick={() => setActiveCategory('foryou')} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '10px 20px', color: 'white', cursor: 'pointer' }}>Browse For You</button>}
       </div>
     );
   }
-  
   return (
     <div style={{ height: '100%', position: 'relative', overflow: 'hidden' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div style={{ position: 'absolute', top: 12, left: 0, right: 0, zIndex: 15, display: 'flex', justifyContent: 'center', gap: 6 }}>
@@ -832,43 +842,112 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
 };
 
 // ============================================
+// FRIENDS FEED
+// ============================================
+const FriendsFeed = ({ friends, videos, currentUser, users, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast }) => {
+  const friendUsers = (friends || []).map(id => users.find(u => u.id === id)).filter(Boolean);
+  const friendVideos = videos.filter(v => (friends || []).includes(v.userId));
+
+  if (!friendUsers.length) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, padding: 24 }}>
+        <div style={{ fontSize: 52 }}>👥</div>
+        <div style={{ color: 'white', fontWeight: 700, fontSize: 18 }}>No Friends Yet</div>
+        <div style={{ color: '#555', textAlign: 'center', fontSize: 13 }}>Follow real users to see them here</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ height: '100%', overflow: 'auto', background: '#0a0a0a' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #1a1a1a' }}>
+        <h2 style={{ color: 'white', fontSize: 18, fontWeight: 700 }}>👥 Friends ({friendUsers.length})</h2>
+      </div>
+      {friendUsers.map(user => (
+        <div key={user.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: '1px solid #111' }}>
+          <div onClick={() => onViewProfile?.(user.id)} style={{ width: 52, height: 52, borderRadius: '50%', background: user.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 20, cursor: 'pointer', overflow: 'hidden', border: '2px solid #ff2d55', flexShrink: 0 }}>
+            {user.photoURL ? <img src={user.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.avatar}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: 'white', fontWeight: 600 }}>@{user.username}</div>
+            <div style={{ color: '#555', fontSize: 11, marginTop: 2 }}>{user.bio?.substring(0, 40)}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => onMessage?.(user.id)} style={{ background: '#1a1a2a', border: '1px solid #2a2a3a', borderRadius: 20, padding: '7px 12px', color: '#af52de', cursor: 'pointer', fontSize: 13 }}>💬</button>
+            <button onClick={() => onVoiceCall?.(user.id)} style={{ background: '#1a2a1a', border: '1px solid #2a3a2a', borderRadius: 20, padding: '7px 12px', color: '#06d6a0', cursor: 'pointer', fontSize: 13 }}>🎙️</button>
+            <button onClick={() => onVideoCall?.(user.id)} style={{ background: '#1a1a2a', border: '1px solid #2a2a3a', borderRadius: 20, padding: '7px 12px', color: '#af52de', cursor: 'pointer', fontSize: 13 }}>📹</button>
+          </div>
+        </div>
+      ))}
+      {friendVideos.length > 0 && (
+        <div style={{ padding: '14px 16px' }}>
+          <h3 style={{ color: 'white', marginBottom: 12, fontSize: 14 }}>Recent Videos from Friends</h3>
+          {friendVideos.map(v => (
+            <div key={v.id} style={{ background: '#141414', borderRadius: 14, padding: '12px 14px', marginBottom: 8 }}>
+              <div style={{ color: '#ff2d55', fontSize: 11 }}>@{v.username}</div>
+              <div style={{ color: 'white', fontSize: 13, marginTop: 2 }}>{v.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
 // WALLET PAGE
 // ============================================
 const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [amount, setAmount] = useState('');
-  const [transactions, setTransactions] = useState([
-    { id: 1, type: 'credit', label: 'Gift received from @sam_creates', amount: 250, date: new Date(Date.now() - 86400000), coins: true },
-    { id: 2, type: 'debit', label: 'Sent gift 🌹 Rose', amount: 50, date: new Date(Date.now() - 172800000), coins: true },
-    { id: 3, type: 'credit', label: 'Top-up via card', amount: 1000, date: new Date(Date.now() - 259200000), coins: false },
-    { id: 4, type: 'debit', label: 'Withdrew to bank', amount: 200, date: new Date(Date.now() - 432000000), coins: false },
-  ]);
+  const [transactions, setTransactions] = useState([]);
 
-  const doDeposit = () => {
+  // Load real transactions from Firestore
+  useEffect(() => {
+    if (!user?.id) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'users', user.id, 'transactions'), orderBy('date', 'desc')),
+      snap => setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, [user?.id]);
+
+  const saveTransaction = async (tx) => {
+    if (!user?.id) return;
+    await addDoc(collection(db, 'users', user.id, 'transactions'), { ...tx, date: serverTimestamp() });
+  };
+
+  const doDeposit = async () => {
     const n = parseInt(amount);
     if (!n || n <= 0) { showToast?.('Enter valid amount', 'error'); return; }
-    setCurrentUser(u => ({ ...u, coins: (u.coins || 0) + n, walletBalance: (u.walletBalance || 0) + n }));
-    setTransactions(prev => [{ id: Date.now(), type: 'credit', label: `Top-up ${n} coins`, amount: n, date: new Date(), coins: true }, ...prev]);
+    const newCoins = (user?.coins || 0) + n;
+    await updateDoc(doc(db, 'users', user.id), { coins: newCoins, walletBalance: (user?.walletBalance || 0) + n });
+    setCurrentUser(u => ({ ...u, coins: newCoins, walletBalance: (u.walletBalance || 0) + n }));
+    await saveTransaction({ type: 'credit', label: `Top-up ${n} coins`, amount: n, coins: true });
     showToast?.(`Added ${n} coins! 🎉`, 'success');
     setAmount('');
   };
 
-  const doWithdraw = () => {
+  const doWithdraw = async () => {
     const n = parseInt(amount);
     if (!n || n <= 0) { showToast?.('Enter valid amount', 'error'); return; }
     if ((user?.coins || 0) < n) { showToast?.('Insufficient coins', 'error'); return; }
-    setCurrentUser(u => ({ ...u, coins: (u.coins || 0) - n, walletBalance: (u.walletBalance || 0) - n }));
-    setTransactions(prev => [{ id: Date.now(), type: 'debit', label: `Withdrew ${n} coins`, amount: n, date: new Date(), coins: true }, ...prev]);
+    const newCoins = (user?.coins || 0) - n;
+    await updateDoc(doc(db, 'users', user.id), { coins: newCoins, walletBalance: (user?.walletBalance || 0) - n });
+    setCurrentUser(u => ({ ...u, coins: newCoins, walletBalance: (u.walletBalance || 0) - n }));
+    await saveTransaction({ type: 'debit', label: `Withdrew ${n} coins`, amount: n, coins: true });
     showToast?.(`Withdrew ${n} coins`, 'success');
     setAmount('');
   };
 
-  const convertCoins = () => {
+  const convertCoins = async () => {
     const n = parseInt(amount);
     if (!n || n <= 0 || (user?.coins || 0) < n) { showToast?.('Insufficient coins', 'error'); return; }
     const eth = (n / 10000).toFixed(4);
-    setCurrentUser(u => ({ ...u, coins: (u.coins || 0) - n }));
-    setTransactions(prev => [{ id: Date.now(), type: 'debit', label: `Converted to ${eth} ETH`, amount: n, date: new Date(), coins: true }, ...prev]);
+    const newCoins = (user?.coins || 0) - n;
+    await updateDoc(doc(db, 'users', user.id), { coins: newCoins });
+    setCurrentUser(u => ({ ...u, coins: newCoins }));
+    await saveTransaction({ type: 'debit', label: `Converted to ${eth} ETH`, amount: n, coins: true });
     showToast?.(`Converted to ${eth} ETH! ✨`, 'success');
     setAmount('');
   };
@@ -878,7 +957,6 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
       <div style={{ padding: '16px 16px 0' }}>
         <button onClick={onBack} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', cursor: 'pointer', fontSize: 12, marginBottom: 16 }}>← Back</button>
         <h2 style={{ color: 'white', marginBottom: 16, fontSize: 20, fontWeight: 700 }}>💰 Wallet</h2>
-
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           <div style={{ background: 'linear-gradient(135deg,#ffd700,#ff9500)', borderRadius: 20, padding: 18 }}>
             <div style={{ color: 'rgba(0,0,0,0.6)', fontSize: 11 }}>Coins Balance</div>
@@ -891,41 +969,37 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
             <div style={{ color: 'rgba(0,0,0,0.5)', fontSize: 10, marginTop: 2 }}>💵 USD</div>
           </div>
         </div>
-
         <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: '#161616', borderRadius: 16, padding: 4 }}>
           {['overview','deposit','withdraw','convert'].map(t => (
             <button key={t} onClick={() => setActiveTab(t)} style={{ flex: 1, background: activeTab === t ? '#ff2d55' : 'none', border: 'none', borderRadius: 12, padding: '8px 4px', color: 'white', cursor: 'pointer', fontSize: 11, fontWeight: activeTab === t ? 700 : 400, textTransform: 'capitalize' }}>{t}</button>
           ))}
         </div>
-
         {activeTab === 'overview' && (
           <div>
             <h3 style={{ color: 'white', marginBottom: 12, fontSize: 14 }}>Recent Transactions</h3>
+            {transactions.length === 0 && <div style={{ color: '#555', textAlign: 'center', padding: 30 }}>No transactions yet</div>}
             {transactions.map(tx => (
               <div key={tx.id} style={{ background: '#141414', borderRadius: 14, padding: '12px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 38, height: 38, borderRadius: '50%', background: tx.type === 'credit' ? 'rgba(6,214,160,0.15)' : 'rgba(255,45,85,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{tx.type === 'credit' ? '⬆️' : '⬇️'}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: 'white', fontSize: 12 }}>{tx.label}</div>
-                  <div style={{ color: '#666', fontSize: 10, marginTop: 2 }}>{tx.date.toLocaleDateString()}</div>
+                  <div style={{ color: '#666', fontSize: 10, marginTop: 2 }}>{tx.date?.toDate?.()?.toLocaleDateString() || 'Just now'}</div>
                 </div>
                 <div style={{ color: tx.type === 'credit' ? '#06d6a0' : '#ff2d55', fontWeight: 700, fontSize: 14 }}>{tx.type === 'credit' ? '+' : '-'}{tx.amount}{tx.coins ? '🪙' : '$'}</div>
               </div>
             ))}
           </div>
         )}
-
         {(activeTab === 'deposit' || activeTab === 'withdraw' || activeTab === 'convert') && (
           <div>
             <div style={{ background: '#141414', borderRadius: 20, padding: 20 }}>
-              <div style={{ color: '#888', fontSize: 12, marginBottom: 8 }}>
-                {activeTab === 'deposit' ? 'Add coins to your wallet' : activeTab === 'withdraw' ? 'Withdraw coins' : 'Convert coins to ETH (1 ETH = 10,000 🪙)'}
-              </div>
+              <div style={{ color: '#888', fontSize: 12, marginBottom: 8 }}>{activeTab === 'deposit' ? 'Add coins to your wallet' : activeTab === 'withdraw' ? 'Withdraw coins' : 'Convert coins to ETH (1 ETH = 10,000 🪙)'}</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 <input type="number" placeholder="Enter amount..." value={amount} onChange={e => setAmount(e.target.value)} style={{ flex: 1, background: '#0d0d0d', border: '1px solid #222', borderRadius: 12, padding: '12px', color: 'white', outline: 'none', fontSize: 15 }} />
                 <span style={{ color: '#888', alignSelf: 'center' }}>🪙</span>
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                {[100,500,1000,5000].map(v => (
+                {[100, 500, 1000, 5000].map(v => (
                   <button key={v} onClick={() => setAmount(String(v))} style={{ flex: 1, background: amount === String(v) ? '#ff2d55' : '#222', border: 'none', borderRadius: 10, padding: '8px', color: 'white', cursor: 'pointer', fontSize: 12 }}>{v}</button>
                 ))}
               </div>
@@ -945,6 +1019,8 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
 // ============================================
 const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowAnalytics, onShowQRCode }) => {
   const [activeSubPage, setActiveSubPage] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
 
   const menuItems = [
     { icon: '⚙️', label: 'Settings', page: 'settings', color: '#fff' },
@@ -956,6 +1032,25 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
     { icon: '📊', label: 'Analytics', page: 'analytics', color: '#06d6a0' },
     { icon: '📱', label: 'QR Code', page: 'qrcode', color: '#fff' },
   ];
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'g3c7dwdg');
+      formData.append('cloud_name', 'dotvhzjmc');
+      const res = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/image/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      const photoURL = data.secure_url;
+      await updateDoc(doc(db, 'users', user.id), { photoURL });
+      setCurrentUser(u => ({ ...u, photoURL }));
+      showToast?.('Profile picture updated! ✅', 'success');
+    } catch { showToast?.('Upload failed. Try again.', 'error'); }
+    finally { setUploadingPhoto(false); }
+  };
 
   if (activeSubPage === 'analytics') { onShowAnalytics?.(); setActiveSubPage(null); return null; }
   if (activeSubPage === 'qrcode') { onShowQRCode?.(); setActiveSubPage(null); return null; }
@@ -1006,7 +1101,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
           <div style={{ color: plan.color, fontWeight: 700, fontSize: 18, marginBottom: 4 }}>{plan.name}</div>
           <div style={{ color: 'white', fontSize: 22, fontWeight: 800, marginBottom: 12 }}>{plan.price}</div>
           {plan.features.map(f=><div key={f} style={{ color: '#bbb', fontSize: 13, marginBottom: 6 }}>✓ {f}</div>)}
-          <button onClick={()=>showToast?.(`${plan.name} plan activated!`,'success')} style={{ width: '100%', background: plan.color, border: 'none', borderRadius: 20, padding: 12, color: plan.name==='Pro'?'#000':'white', fontWeight: 700, cursor: 'pointer', marginTop: 8 }}>Subscribe to {plan.name}</button>
+          <button onClick={async()=>{ await updateDoc(doc(db,'users',user.id),{subscription:plan.name.toLowerCase()}); setCurrentUser(u=>({...u,subscription:plan.name.toLowerCase()})); showToast?.(`${plan.name} plan activated!`,'success'); }} style={{ width: '100%', background: plan.color, border: 'none', borderRadius: 20, padding: 12, color: plan.name==='Pro'?'#000':'white', fontWeight: 700, cursor: 'pointer', marginTop: 8 }}>Subscribe to {plan.name}</button>
         </div>
       ))}
     </div>
@@ -1035,39 +1130,15 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
       <h2 style={{ color: 'white', marginBottom: 16, fontSize: 20, fontWeight: 700 }}>🔄 Switch Account</h2>
       {users.map(u=>(
         <div key={u.id} style={{ background: '#141414', borderRadius: 14, padding: 14, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', border: u.id===user?.id?'1px solid #ff2d55':'1px solid transparent' }} onClick={()=>{setCurrentUser(u);showToast?.(`Switched to @${u.username}`,'success');setActiveSubPage(null);}}>
-          <div style={{ width: 44, height: 44, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 18 }}>{u.avatar}</div>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 18, overflow: 'hidden' }}>
+            {u.photoURL ? <img src={u.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : u.avatar}
+          </div>
           <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600 }}>@{u.username}</div><div style={{ color: '#555', fontSize: 11 }}>{u.subscription} plan</div></div>
           {u.id===user?.id&&<span style={{ color: '#ff2d55', fontSize: 11, fontWeight: 600 }}>Active</span>}
         </div>
       ))}
     </div>
   );
-
-  const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
-  const photoInputRef = React.useRef(null);
-
-  const handlePhotoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploadingPhoto(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', 'g3c7dwdg');
-      formData.append('cloud_name', 'dotvhzjmc');
-      const res = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/image/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      setCurrentUser(u => ({ ...u, photoURL: data.secure_url }));
-      showToast?.('Profile picture updated! ✅', 'success');
-    } catch (err) {
-      showToast?.('Upload failed. Try again.', 'error');
-    } finally {
-      setUploadingPhoto(false);
-    }
-  };
 
   return (
     <div style={{ height: '100%', overflow: 'auto', background: '#0a0a0a' }}>
@@ -1103,47 +1174,98 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
 };
 
 // ============================================
-// INBOX PAGE
+// CONVERSATION VIEW — Real Firebase messages
 // ============================================
-const InboxPage = ({ users, currentUser, showToast }) => {
-  const [activeConversation, setActiveConversation] = useState(null);
-  const otherUsers = users.filter(u => u.id !== currentUser?.id);
+const ConversationView = ({ currentUser, otherUser, onBack, showToast }) => {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceBlob, setVoiceBlob] = useState(null);
+  const [attachedFile, setAttachedFile] = useState(null);
+  const messagesEndRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const fileInputRef = useRef(null);
 
-  if (activeConversation) {
-    const otherUser = users.find(u => u.id === activeConversation);
-    return <ConversationView currentUser={currentUser} otherUser={otherUser} onBack={() => setActiveConversation(null)} showToast={showToast} />;
-  }
+  const chatId = getChatId(currentUser?.id, otherUser?.id);
 
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
-      <div style={{ padding: '16px 16px', borderBottom: '1px solid #1a1a1a' }}>
-        <h2 style={{ color: 'white', fontSize: 20, fontWeight: 700 }}>💬 Messages</h2>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {otherUsers.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 60, color: '#555' }}>
-            <div style={{ fontSize: 44, marginBottom: 12 }}>💬</div>
-            <div>No users yet</div>
-          </div>
-        )}
-        {otherUsers.map(u => (
-          <div key={u.id} onClick={() => setActiveConversation(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: '1px solid #111', cursor: 'pointer' }}>
-            <div style={{ position: 'relative' }}>
-              <div style={{ width: 48, height: 48, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 20, overflow: 'hidden' }}>
-                {u.photoURL ? <img src={u.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : u.avatar}
-              </div>
-              <div style={{ position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, background: '#06d6a0', borderRadius: '50%', border: '2px solid #0a0a0a' }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>@{u.username}</div>
-              <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>Tap to chat</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+  // Real-time message sync
+  useEffect(() => {
+    if (!chatId) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'chats', chatId, 'messages'), orderBy('timestamp')),
+      snap => setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, [chatId]);
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  const startVoice = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = e => chunksRef.current.push(e.data);
+      recorder.onstop = () => { setVoiceBlob(new Blob(chunksRef.current, { type: 'audio/webm' })); stream.getTracks().forEach(t => t.stop()); };
+      recorder.start(); recorderRef.current = recorder; setIsRecording(true);
+    } catch { showToast?.('Mic denied', 'error'); }
+  };
+  const stopVoice = () => { recorderRef.current?.stop(); setIsRecording(false); };
+  const handleFileSelect = e => { const f = e.target.files[0]; if (f) setAttachedFile({ name: f.name, type: f.type, url: URL.createObjectURL(f) }); };
+
+  const handleSend = async () => {
+    if (!text.trim() && !voiceBlob && !attachedFile) return;
+    let voiceUrl = null;
+    let fileUrl = null;
+
+    // Upload voice/file to Cloudinary
+    if (voiceBlob) {
+      try {
+        const fd = new FormData();
+        fd.append('file', voiceBlob, 'voice.webm');
+        fd.append('upload_preset', 'g3c7dwdg');
+        fd.append('cloud_name', 'dotvhzjmc');
+        const r = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/auto/upload', { method: 'POST', body: fd });
+        const d = await r.json();
+        voiceUrl = d.secure_url;
+      } catch { showToast?.('Voice upload failed', 'error'); return; }
+    }
+    if (attachedFile) {
+      try {
+        const fd = new FormData();
+        fd.append('file', attachedFile.file || attachedFile.url);
+        fd.append('upload_preset', 'g3c7dwdg');
+        fd.append('cloud_name', 'dotvhzjmc');
+        const r = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/auto/upload', { method: 'POST', body: fd });
+        const d = await r.json();
+        fileUrl = d.secure_url;
+      } catch {}
+    }
+
+    // Ensure chat document exists
+    await setDoc(doc(db, 'chats', chatId), {
+      participants: [currentUser.id, otherUser?.id],
+      lastMessage: text || '📎 Attachment',
+      lastMessageAt: serverTimestamp(),
+    }, { merge: true });
+
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      from: currentUser.id,
+      to: otherUser?.id,
+      text: text || '',
+      voiceUrl: voiceUrl || null,
+      fileUrl: fileUrl || null,
+      fileName: attachedFile?.name || null,
+      fileType: attachedFile?.type || null,
+      timestamp: serverTimestamp(),
+      read: false,
+    });
+
+    setText(''); setVoiceBlob(null); setAttachedFile(null); setShowEmoji(false);
+  };
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
       <div style={{ padding: '12px 14px', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1164,7 +1286,13 @@ const InboxPage = ({ users, currentUser, showToast }) => {
             <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
               <div style={{ background: isMe ? '#ff2d55' : '#1a1a1a', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', maxWidth: '75%' }}>
                 {msg.text && <div style={{ color: 'white', fontSize: 13 }}>{msg.text}</div>}
-                <div style={{ color: isMe ? 'rgba(255,255,255,0.5)' : '#444', fontSize: 9, marginTop: 4, textAlign: 'right' }}>{msg.timestamp?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'now'}</div>
+                {msg.voiceUrl && <audio src={msg.voiceUrl} controls style={{ height: 30, maxWidth: 180 }} />}
+                {msg.fileUrl && (
+                  msg.fileType?.startsWith('image/') ? <img src={msg.fileUrl} alt="" style={{ maxWidth: 180, borderRadius: 8, marginTop: msg.text ? 6 : 0 }} /> : <div style={{ color: '#ddd', fontSize: 11, marginTop: 4 }}>📎 {msg.fileName}</div>
+                )}
+                <div style={{ color: isMe ? 'rgba(255,255,255,0.5)' : '#444', fontSize: 9, marginTop: 4, textAlign: 'right' }}>
+                  {msg.timestamp?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'sending...'}
+                </div>
               </div>
             </div>
           );
@@ -1176,84 +1304,10 @@ const InboxPage = ({ users, currentUser, showToast }) => {
           {EMOJI_LIST.map(e => <button key={e} onClick={() => setText(p => p + e)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: 2 }}>{e}</button>)}
         </div>
       )}
-      <div style={{ padding: '10px 12px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: 6, alignItems: 'center' }}>
-        <button onClick={() => setShowEmoji(p => !p)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 17, cursor: 'pointer' }}>😊</button>
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Message..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 22, padding: '9px 14px', color: 'white', outline: 'none', fontSize: 13 }} />
-        <button onClick={handleSend} style={{ background: '#ff2d55', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', cursor: 'pointer', fontSize: 17 }}>↑</button>
-      </div>
-    </div>
-  );
-};
-
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  const startVoice = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = e => chunksRef.current.push(e.data);
-      recorder.onstop = () => { setVoiceBlob(new Blob(chunksRef.current, { type: 'audio/webm' })); stream.getTracks().forEach(t => t.stop()); };
-      recorder.start();
-      recorderRef.current = recorder;
-      setIsRecording(true);
-    } catch { showToast?.('Mic denied', 'error'); }
-  };
-
-  const stopVoice = () => { recorderRef.current?.stop(); setIsRecording(false); };
-
-  const handleFileSelect = e => {
-    const f = e.target.files[0];
-    if (f) setAttachedFile({ name: f.name, type: f.type, url: URL.createObjectURL(f) });
-  };
-
-  const handleSend = () => {
-    if (!text.trim() && !voiceBlob && !attachedFile) return;
-    onSend(text, voiceBlob, attachedFile);
-    setText('');
-    setVoiceBlob(null);
-    setAttachedFile(null);
-    setShowEmoji(false);
-  };
-
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
-      <div style={{ padding: '12px 14px', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button onClick={onBack} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '7px 12px', color: 'white', cursor: 'pointer', fontSize: 13 }}>←</button>
-        <div style={{ width: 38, height: 38, borderRadius: '50%', background: otherUser?.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>{otherUser?.avatar}</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: 'white', fontWeight: 600 }}>@{otherUser?.username}</div>
-          <div style={{ color: '#06d6a0', fontSize: 11 }}>● Online</div>
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {messages.length === 0 && <div style={{ textAlign: 'center', color: '#444', fontSize: 13, marginTop: 40 }}>Say hello to @{otherUser?.username}! 👋</div>}
-        {messages.map(msg => {
-          const isMe = msg.from === currentUser?.id;
-          return (
-            <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-              <div style={{ background: isMe ? '#ff2d55' : '#1a1a1a', borderRadius: isMe ? '18px 18px 4px 18px' : '18px 18px 18px 4px', padding: '10px 14px', maxWidth: '75%' }}>
-                {msg.text && <div style={{ color: 'white', fontSize: 13 }}>{msg.text}</div>}
-                {msg.voiceBlob && <audio src={URL.createObjectURL(msg.voiceBlob)} controls style={{ height: 30, maxWidth: 180 }} />}
-                {msg.attachedFile && (
-                  msg.attachedFile.type?.startsWith('image/') ? <img src={msg.attachedFile.url} alt="" style={{ maxWidth: 180, borderRadius: 8, marginTop: msg.text?6:0 }} /> : <div style={{ color: '#ddd', fontSize: 11, marginTop: 4 }}>📎 {msg.attachedFile.name}</div>
-                )}
-                <div style={{ color: isMe ? 'rgba(255,255,255,0.5)' : '#444', fontSize: 9, marginTop: 4, textAlign: 'right' }}>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-              </div>
-            </div>
-          );
-        })}
-        <div ref={messagesEndRef} />
-      </div>
-      {showEmoji && (
-        <div style={{ background: '#161616', padding: 10, display: 'flex', flexWrap: 'wrap', gap: 6, borderTop: '1px solid #222' }}>
-          {EMOJI_LIST.map(e => <button key={e} onClick={() => { setText(p => p + e); }} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: 2 }}>{e}</button>)}
-        </div>
-      )}
       {(voiceBlob || attachedFile) && (
         <div style={{ background: '#161616', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #222' }}>
           {voiceBlob && <><span>🎙️</span><audio src={URL.createObjectURL(voiceBlob)} controls style={{ flex: 1, height: 28 }} /></>}
-          {attachedFile && <><span>{attachedFile.type?.startsWith('image/')?'🖼️':'📎'}</span><span style={{ color: '#ccc', fontSize: 11, flex: 1 }}>{attachedFile.name}</span></>}
+          {attachedFile && <><span>{attachedFile.type?.startsWith('image/') ? '🖼️' : '📎'}</span><span style={{ color: '#ccc', fontSize: 11, flex: 1 }}>{attachedFile.name}</span></>}
           <button onClick={() => { setVoiceBlob(null); setAttachedFile(null); }} style={{ background: '#333', border: 'none', borderRadius: '50%', width: 22, height: 22, color: 'white', cursor: 'pointer', fontSize: 12 }}>✕</button>
         </div>
       )}
@@ -1264,6 +1318,71 @@ const InboxPage = ({ users, currentUser, showToast }) => {
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={handleFileSelect} style={{ display: 'none' }} />
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Message..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 22, padding: '9px 14px', color: 'white', outline: 'none', fontSize: 13 }} />
         <button onClick={handleSend} style={{ background: '#ff2d55', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', cursor: 'pointer', fontSize: 17 }}>↑</button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// INBOX PAGE — Lists real users, opens real chats
+// ============================================
+const InboxPage = ({ users, currentUser, showToast }) => {
+  const [activeConversation, setActiveConversation] = useState(null);
+  const [recentChats, setRecentChats] = useState([]);
+
+  // Load chats involving current user
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const unsub = onSnapshot(
+      query(collection(db, 'chats'), where('participants', 'array-contains', currentUser.id), orderBy('lastMessageAt', 'desc')),
+      snap => setRecentChats(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+    return () => unsub();
+  }, [currentUser?.id]);
+
+  const otherUsers = users.filter(u => u.id !== currentUser?.id);
+
+  if (activeConversation) {
+    const otherUser = users.find(u => u.id === activeConversation);
+    return <ConversationView currentUser={currentUser} otherUser={otherUser} onBack={() => setActiveConversation(null)} showToast={showToast} />;
+  }
+
+  // Merge recent chats with all users (show recent first, then others)
+  const chatUserIds = recentChats.map(c => c.participants.find(p => p !== currentUser.id)).filter(Boolean);
+  const otherUserIds = otherUsers.map(u => u.id).filter(id => !chatUserIds.includes(id));
+  const orderedUserIds = [...chatUserIds, ...otherUserIds];
+  const displayUsers = orderedUserIds.map(id => users.find(u => u.id === id)).filter(Boolean);
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
+      <div style={{ padding: '16px 16px', borderBottom: '1px solid #1a1a1a' }}>
+        <h2 style={{ color: 'white', fontSize: 20, fontWeight: 700 }}>💬 Messages</h2>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {displayUsers.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 60, color: '#555' }}>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>💬</div>
+            <div>No users yet. Sign up more friends!</div>
+          </div>
+        )}
+        {displayUsers.map(u => {
+          const chat = recentChats.find(c => c.participants.includes(u.id));
+          return (
+            <div key={u.id} onClick={() => setActiveConversation(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: '1px solid #111', cursor: 'pointer' }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 20, overflow: 'hidden' }}>
+                  {u.photoURL ? <img src={u.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : u.avatar}
+                </div>
+                <div style={{ position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, background: '#06d6a0', borderRadius: '50%', border: '2px solid #0a0a0a' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>@{u.username}</div>
+                <div style={{ color: '#555', fontSize: 12, marginTop: 2 }}>{chat?.lastMessage || 'Tap to chat'}</div>
+              </div>
+              {chat?.lastMessageAt && <div style={{ color: '#444', fontSize: 10 }}>{chat.lastMessageAt?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1299,52 +1418,318 @@ const CallModal = ({ type, contactName, contactAvatar, onClose }) => {
 };
 
 // ============================================
+// SEARCH OVERLAY
+// ============================================
+const SearchOverlay = ({ onClose, videos, users, onViewProfile }) => {
+  const [query, setQuery] = useState('');
+  const [tab, setTab] = useState('all');
+  const results = useMemo(() => {
+    if (!query.trim()) return { videos: [], users: [], hashtags: [] };
+    const q = query.toLowerCase();
+    return {
+      videos: videos.filter(v => v.username?.toLowerCase().includes(q) || v.description?.toLowerCase().includes(q)).slice(0, 6),
+      users: users.filter(u => u.username?.toLowerCase().includes(q) || u.bio?.toLowerCase().includes(q)).slice(0, 6),
+      hashtags: [...new Set(videos.flatMap(v => v.hashtags || []).filter(h => h.toLowerCase().includes(q)))].slice(0, 6),
+    };
+  }, [query, videos, users]);
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#161616', borderRadius: 24, padding: '9px 14px' }}>
+          <span style={{ marginRight: 8 }}>🔍</span>
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search videos, users, tags..." style={{ flex: 1, background: 'none', border: 'none', color: 'white', outline: 'none', fontSize: 13 }} />
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }}>✕</button>
+      </div>
+      {query && (
+        <>
+          <div style={{ display: 'flex', gap: 4, padding: '8px 14px', borderBottom: '1px solid #1a1a1a' }}>
+            {['all','videos','users','hashtags'].map(t => (
+              <button key={t} onClick={() => setTab(t)} style={{ background: tab === t ? 'rgba(255,45,85,0.15)' : 'none', border: 'none', padding: '5px 12px', color: tab===t?'#ff2d55':'#666', cursor: 'pointer', borderRadius: 20, fontSize: 12, fontWeight: tab===t?700:400, textTransform: 'capitalize' }}>{t}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+            {(tab === 'all' || tab === 'users') && results.users.map(u => (
+              <div key={u.id} onClick={() => { onViewProfile?.(u.id); onClose(); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: '#141414', borderRadius: 12, marginBottom: 8, cursor: 'pointer' }}>
+                <div style={{ width: 40, height: 40, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', overflow: 'hidden' }}>
+                  {u.photoURL ? <img src={u.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : u.avatar}
+                </div>
+                <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600, fontSize: 13 }}>@{u.username}</div><div style={{ color: '#555', fontSize: 11 }}>{u.bio?.substring(0, 45)}</div></div>
+              </div>
+            ))}
+            {(tab === 'all' || tab === 'videos') && results.videos.map(v => (
+              <div key={v.id} style={{ padding: '10px 12px', background: '#141414', borderRadius: 12, marginBottom: 8 }}>
+                <div style={{ color: '#ff2d55', fontSize: 11 }}>@{v.username}</div>
+                <div style={{ color: 'white', fontSize: 13, marginTop: 2 }}>{v.description}</div>
+              </div>
+            ))}
+            {(tab === 'all' || tab === 'hashtags') && results.hashtags.map(h => (
+              <div key={h} style={{ padding: '11px 14px', background: '#141414', borderRadius: 12, marginBottom: 8, color: '#ff2d55', fontSize: 15, fontWeight: 600 }}>{h}</div>
+            ))}
+          </div>
+        </>
+      )}
+      {!query && (
+        <div style={{ padding: 20 }}>
+          <div style={{ color: '#555', fontSize: 13, marginBottom: 12 }}>All Users</div>
+          {users.map(u => (
+            <div key={u.id} onClick={() => { onViewProfile?.(u.id); onClose(); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: '#141414', borderRadius: 12, marginBottom: 8, cursor: 'pointer' }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', overflow: 'hidden' }}>
+                {u.photoURL ? <img src={u.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : u.avatar}
+              </div>
+              <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600, fontSize: 13 }}>@{u.username}</div><div style={{ color: '#555', fontSize: 11 }}>{u.bio?.substring(0, 45)}</div></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// CAMERA UPLOAD — Saves video to Firebase
+// ============================================
+const CameraUpload = ({ onUpload, onClose, showToast, currentUser }) => {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [description, setDescription] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setShowCamera(true);
+    } catch { showToast?.('Camera access denied', 'error'); }
+  };
+  const stopCamera = () => {
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    setShowCamera(false);
+  };
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
+      canvas.toBlob(blob => {
+        setSelectedFile({ file: new File([blob], 'photo.jpg', { type: 'image/jpeg' }), url: URL.createObjectURL(blob), type: 'image/jpeg' });
+        stopCamera();
+      }, 'image/jpeg');
+    }
+  };
+  const handleFileSelect = e => { const f = e.target.files[0]; if (f) setSelectedFile({ file: f, url: URL.createObjectURL(f), type: f.type }); };
+
+  const handleUpload = async () => {
+    if (!selectedFile) { showToast?.('Select media first', 'error'); return; }
+    setUploading(true);
+    try {
+      // Upload to Cloudinary
+      const formData = new FormData();
+      formData.append('file', selectedFile.file);
+      formData.append('upload_preset', 'g3c7dwdg');
+      formData.append('cloud_name', 'dotvhzjmc');
+      const res = await fetch('https://api.cloudinary.com/v1_1/dotvhzjmc/auto/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      const videoUrl = data.secure_url;
+
+      // Save to Firestore videos collection
+      const newVideo = {
+        userId: currentUser?.id,
+        username: currentUser?.username,
+        avatar: currentUser?.avatar,
+        avatarColor: currentUser?.avatarColor,
+        photoURL: currentUser?.photoURL || '',
+        verified: currentUser?.verified || false,
+        description: description || 'New post! 🔥',
+        videoUrl,
+        likes: 0,
+        commentCount: 0,
+        shares: 0,
+        views: 0,
+        hashtags: [],
+        song: 'Original sound',
+        category: 'foryou',
+        createdAt: serverTimestamp(),
+      };
+      const docRef = await addDoc(collection(db, 'videos'), newVideo);
+      onUpload?.({ id: docRef.id, ...newVideo, createdAt: new Date() });
+      showToast?.('Posted! 🚀', 'success');
+      onClose?.();
+    } catch (err) {
+      showToast?.('Upload failed. Check your connection.', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  useEffect(() => () => stopCamera(), []);
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 100, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1a1a1a' }}>
+        <button onClick={onClose} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+        <h3 style={{ color: 'white', fontSize: 15, fontWeight: 700 }}>Create Post</h3>
+        <button onClick={handleUpload} disabled={uploading} style={{ background: uploading ? '#555' : '#ff2d55', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', fontWeight: 700, cursor: uploading ? 'default' : 'pointer', fontSize: 13 }}>{uploading ? 'Uploading...' : 'Post'}</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        {showCamera ? (
+          <div style={{ position: 'relative' }}>
+            <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: 16 }} />
+            <button onClick={capturePhoto} style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2d55', border: 'none', borderRadius: '50%', width: 64, height: 64, fontSize: 28, cursor: 'pointer' }}>📸</button>
+            <button onClick={stopCamera} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: 'white', cursor: 'pointer' }}>✕</button>
+          </div>
+        ) : selectedFile ? (
+          <div style={{ position: 'relative' }}>
+            {selectedFile.type.startsWith('image/') ? <img src={selectedFile.url} alt="preview" style={{ width: '100%', borderRadius: 16 }} /> : <video src={selectedFile.url} controls style={{ width: '100%', borderRadius: 16 }} />}
+            <button onClick={() => setSelectedFile(null)} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer' }}>✕</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ display: 'block', textAlign: 'center', padding: 40, background: '#141414', borderRadius: 16, cursor: 'pointer' }}>
+              <div style={{ fontSize: 44 }}>📁</div>
+              <div style={{ color: '#888', marginTop: 8 }}>Choose from gallery</div>
+              <input type="file" accept="image/*,video/*" onChange={handleFileSelect} style={{ display: 'none' }} />
+            </label>
+            <button onClick={startCamera} style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 12, padding: 14, color: 'white', cursor: 'pointer', fontSize: 14 }}>📸 Open Camera</button>
+          </div>
+        )}
+        <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe your post... #hashtags" style={{ width: '100%', marginTop: 14, background: '#141414', border: '1px solid #222', borderRadius: 14, padding: 12, color: 'white', resize: 'none', height: 80, outline: 'none', fontSize: 13 }} />
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// SOUND LIBRARY PAGE
+// ============================================
+const SoundLibraryPage = ({ onSelectSound, onClose }) => {
+  const [search, setSearch] = useState('');
+  const filtered = SOUND_LIBRARY.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.artist.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: 10, alignItems: 'center' }}>
+        <h3 style={{ color: 'white', fontSize: 16, flex: 1 }}>🎵 Sounds</h3>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }}>✕</button>
+      </div>
+      <div style={{ padding: '10px 14px' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search sounds..." style={{ width: '100%', background: '#161616', border: 'none', borderRadius: 20, padding: '10px 16px', color: 'white', outline: 'none', fontSize: 13, boxSizing: 'border-box' }} />
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px' }}>
+        {filtered.map(sound => (
+          <div key={sound.id} onClick={() => onSelectSound(sound)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px', background: '#141414', borderRadius: 14, marginBottom: 8, cursor: 'pointer' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#ff2d55,#af52de)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🎵</div>
+            <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600, fontSize: 13 }}>{sound.name}</div><div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{sound.artist} · {sound.duration}</div></div>
+            {sound.popular && <span style={{ color: '#ffd700', fontSize: 11 }}>🔥</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// ANALYTICS PAGE — Uses real video data
+// ============================================
+const CreatorAnalytics = ({ user, videos, onClose }) => {
+  const userVideos = videos.filter(v => v.userId === user?.id);
+  const totalViews = userVideos.reduce((s, v) => s + (v.views || 0), 0);
+  const totalLikes = userVideos.reduce((s, v) => s + (v.likes || 0), 0);
+  const totalComments = userVideos.reduce((s, v) => s + (v.commentCount || 0), 0);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 200, overflow: 'auto' }}>
+      <div style={{ padding: '70px 20px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ color: 'white', fontSize: 24 }}>📊 Analytics</h2>
+          <button onClick={onClose} style={{ background: '#1a1a1a', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', cursor: 'pointer' }}>Close</button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 14, marginBottom: 20 }}>
+          {[['Total Views',formatNumber(totalViews),'#06d6a0'],['Total Likes',formatNumber(totalLikes),'#ff2d55'],['Videos',String(userVideos.length),'#af52de'],['Comments',formatNumber(totalComments),'#ffd700']].map(([label,val,color])=>(
+            <div key={label} style={{ background: '#1a1a1a', borderRadius: 16, padding: 18 }}>
+              <div style={{ color: '#888', fontSize: 11 }}>{label}</div>
+              <div style={{ color: color, fontSize: 26, fontWeight: 700, marginTop: 4 }}>{val}</div>
+            </div>
+          ))}
+        </div>
+        {userVideos.length === 0 && <div style={{ color: '#555', textAlign: 'center', padding: 40 }}>Post a video to see analytics</div>}
+        {userVideos.map(v => (
+          <div key={v.id} style={{ background: '#141414', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+            <div style={{ color: 'white', fontSize: 13, marginBottom: 8 }}>{v.description}</div>
+            <div style={{ display: 'flex', gap: 16 }}>
+              <span style={{ color: '#ff2d55', fontSize: 12 }}>❤️ {v.likes || 0}</span>
+              <span style={{ color: '#06d6a0', fontSize: 12 }}>👁️ {v.views || 0}</span>
+              <span style={{ color: '#af52de', fontSize: 12 }}>💬 {v.commentCount || 0}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ============================================
+// QR CODE PAGE
+// ============================================
+const QRCodePage = ({ user, onClose }) => (
+  <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ background: '#141414', borderRadius: 28, padding: 32, textAlign: 'center', maxWidth: 300, width: '100%', margin: '0 20px' }}>
+      <button onClick={onClose} style={{ position: 'absolute', marginLeft: 100, marginTop: -16, background: '#222', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer' }}>✕</button>
+      <div style={{ fontSize: 70, marginBottom: 14 }}>📱</div>
+      <div style={{ width: 180, height: 180, background: 'white', margin: '0 auto 20px', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundImage: 'repeating-linear-gradient(45deg,#000 0,#000 2px,#fff 2px,#fff 8px)' }}>
+        <div style={{ width: 140, height: 140, background: 'white', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+          <div style={{ fontSize: 36 }}>🎬</div>
+          <div style={{ fontSize: 11, fontWeight: 'bold', marginTop: 6 }}>@{user?.username}</div>
+        </div>
+      </div>
+      <h3 style={{ color: 'white', marginBottom: 6 }}>Scan to Follow</h3>
+      <p style={{ color: '#888', fontSize: 12 }}>@{user?.username} on Dagu</p>
+      <button style={{ marginTop: 16, width: '100%', background: '#ff2d55', border: 'none', borderRadius: 24, padding: 12, color: 'white', fontWeight: 600, cursor: 'pointer' }}>Share Profile</button>
+    </div>
+  </div>
+);
+
+// ============================================
 // AUTH SCREEN
 // ============================================
 const AuthScreen = ({ onLogin, onSignup }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [selectedMethod, setSelectedMethod] = useState(null);
+  const [step, setStep] = useState('method');
   const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
-  const [otpInput, setOtpInput] = useState('');
-  const [step, setStep] = useState('method');
+  const [password, setPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [otpInput, setOtpInput] = useState('');
   const [timer, setTimer] = useState(0);
 
-const sendOTP = async () => {
-    if (!identifier) {
-      alert('Please enter your email first!');
-      return;
-    }
+  const sendOTP = async () => {
+    if (!identifier) { alert('Please enter your email first!'); return; }
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setOtpCode(code);
     setTimer(60);
     try {
-      await emailjs.send(
-        'service_mtqmvbb',
-        'template_1k7wiqa',
-        { to_email: identifier, otp_code: code },
-        'U9fs25Bcx5oQ6A2ru'
-      );
+      await emailjs.send('service_mtqmvbb', 'template_1k7wiqa', { to_email: identifier, otp_code: code }, 'U9fs25Bcx5oQ6A2ru');
       alert('✅ OTP sent to ' + identifier + '! Check your inbox.');
     } catch (err) {
       console.error('EmailJS error:', err);
       alert('❌ Failed to send OTP: ' + err.text);
     }
   };
+
   const verifyOTP = () => {
     if (otpInput === otpCode) { if (isLogin) onLogin(identifier, 'otp'); else onSignup(identifier, username, fullName, 'otp'); }
     else alert('Invalid OTP');
   };
+
   useEffect(() => { if (timer > 0) { const i = setInterval(() => setTimer(t => t - 1), 1000); return () => clearInterval(i); } }, [timer]);
+
   const handleMethodSelect = m => { setSelectedMethod(m); setStep('credentials'); };
-const handleSubmit = () => {
-    if (selectedMethod?.id === 'phone') {
-      alert('📱 Phone login coming soon! Please use Email for now.');
-      return;
-    }
+  const handleSubmit = () => {
+    if (selectedMethod?.id === 'phone') { alert('📱 Phone login coming soon! Please use Email.'); return; }
     if (selectedMethod?.id === 'email') { sendOTP(); setStep('otp'); }
     else { if (isLogin) onLogin(identifier, password); else onSignup(identifier, username, fullName, password); }
   };
@@ -1404,260 +1789,12 @@ const handleSubmit = () => {
           <input placeholder="000000" maxLength={6} value={otpInput} onChange={e => setOtpInput(e.target.value)} style={{ width: '100%', background: '#0d0d0d', border: '1px solid #2a2a2a', borderRadius: 12, padding: 14, color: 'white', textAlign: 'center', fontSize: 22, letterSpacing: 6, marginBottom: 16, outline: 'none', boxSizing:'border-box' }} />
           <button onClick={verifyOTP} disabled={otpInput.length !== 6} style={{ width: '100%', background: otpInput.length === 6 ? '#ff2d55' : '#1a1a1a', border: 'none', borderRadius: 24, padding: 13, color: 'white', fontWeight: 600, cursor: otpInput.length === 6 ? 'pointer' : 'default' }}>Verify & {isLogin ? 'Login' : 'Sign Up'}</button>
           {timer > 0 && <div style={{ color: '#555', fontSize: 11, marginTop: 10 }}>Resend in {timer}s</div>}
+          {timer === 0 && otpCode && <button onClick={sendOTP} style={{ background: 'none', border: 'none', color: '#ff2d55', fontSize: 12, marginTop: 10, cursor: 'pointer' }}>Resend OTP</button>}
         </div>
       </div>
     </div>
   );
 };
-
-// ============================================
-// SEARCH OVERLAY
-// ============================================
-const SearchOverlay = ({ onClose, videos, users, onViewProfile }) => {
-  const [query, setQuery] = useState('');
-  const [tab, setTab] = useState('all');
-  const results = useMemo(() => {
-    if (!query.trim()) return { videos: [], users: [], hashtags: [] };
-    const q = query.toLowerCase();
-    return {
-      videos: videos.filter(v => v.username.toLowerCase().includes(q) || v.description.toLowerCase().includes(q)).slice(0,6),
-      users: users.filter(u => u.username.toLowerCase().includes(q)).slice(0,6),
-      hashtags: [...new Set(videos.flatMap(v => v.hashtags||[]).filter(h => h.toLowerCase().includes(q)))].slice(0,6),
-    };
-  }, [query, videos, users]);
-  return (
-    <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '14px', borderBottom: '1px solid #1a1a1a', display: 'flex', gap: 10, alignItems: 'center' }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#161616', borderRadius: 24, padding: '9px 14px' }}>
-          <span style={{ marginRight: 8 }}>🔍</span>
-          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search videos, users, tags..." style={{ flex: 1, background: 'none', border: 'none', color: 'white', outline: 'none', fontSize: 13 }} />
-        </div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }}>✕</button>
-      </div>
-      {query && (
-        <>
-          <div style={{ display: 'flex', gap: 4, padding: '8px 14px', borderBottom: '1px solid #1a1a1a' }}>
-            {['all','videos','users','hashtags'].map(t => (
-              <button key={t} onClick={() => setTab(t)} style={{ background: tab === t ? 'rgba(255,45,85,0.15)' : 'none', border: 'none', padding: '5px 12px', color: tab===t?'#ff2d55':'#666', cursor: 'pointer', borderRadius: 20, fontSize: 12, fontWeight: tab===t?700:400, textTransform: 'capitalize' }}>{t}</button>
-            ))}
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-            {(tab === 'all' || tab === 'users') && results.users.map(u => (
-              <div key={u.id} onClick={() => { onViewProfile?.(u.id); onClose(); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: '#141414', borderRadius: 12, marginBottom: 8, cursor: 'pointer' }}>
-                <div style={{ width: 40, height: 40, borderRadius: '50%', background: u.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>{u.avatar}</div>
-                <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600, fontSize: 13 }}>@{u.username}</div><div style={{ color: '#555', fontSize: 11 }}>{u.bio?.substring(0,45)}</div></div>
-              </div>
-            ))}
-            {(tab === 'all' || tab === 'videos') && results.videos.map(v => (
-              <div key={v.id} style={{ padding: '10px 12px', background: '#141414', borderRadius: 12, marginBottom: 8 }}>
-                <div style={{ color: '#ff2d55', fontSize: 11 }}>@{v.username}</div>
-                <div style={{ color: 'white', fontSize: 13, marginTop: 2 }}>{v.description}</div>
-              </div>
-            ))}
-            {(tab === 'all' || tab === 'hashtags') && results.hashtags.map(h => (
-              <div key={h} style={{ padding: '11px 14px', background: '#141414', borderRadius: 12, marginBottom: 8, color: '#ff2d55', fontSize: 15, fontWeight: 600 }}>{h}</div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-// ============================================
-// CAMERA UPLOAD
-// ============================================
-const CameraUpload = ({ onUpload, onClose, showToast }) => {
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [description, setDescription] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [showCamera, setShowCamera] = useState(false);
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      setShowCamera(true);
-    } catch { showToast?.('Camera access denied', 'error'); }
-  };
-  const stopCamera = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } setShowCamera(false); };
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      canvas.getContext('2d').drawImage(videoRef.current, 0, 0);
-      canvas.toBlob(blob => { const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' }); setSelectedFile({ file, url: URL.createObjectURL(blob), type: 'image/jpeg' }); stopCamera(); }, 'image/jpeg');
-    }
-  };
-  const handleFileSelect = e => { const f = e.target.files[0]; if (f) setSelectedFile({ file: f, url: URL.createObjectURL(f), type: f.type }); };
-  const handleUpload = () => {
-    if (!selectedFile) { showToast?.('Select media first', 'error'); return; }
-    setUploading(true);
-    setTimeout(() => { onUpload?.({ id: `v${Date.now()}`, videoUrl: selectedFile.url, description: description || 'New post! 🔥', createdAt: new Date().toISOString() }); setUploading(false); onClose?.(); showToast?.('Posted! 🚀', 'success'); }, 1200);
-  };
-  useEffect(() => { return () => stopCamera(); }, []);
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 100, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1a1a1a' }}>
-        <button onClick={onClose} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-        <h3 style={{ color: 'white', fontSize: 15, fontWeight: 700 }}>Create Post</h3>
-        <button onClick={handleUpload} disabled={uploading} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', fontWeight: 700, cursor: uploading ? 'default' : 'pointer', fontSize: 13 }}>{uploading ? '...' : 'Post'}</button>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <button onClick={stopCamera} style={{ flex: 1, background: !showCamera ? '#ff2d55' : '#161616', border: 'none', borderRadius: 12, padding: 11, color: 'white', cursor: 'pointer', fontSize: 12 }}>📱 Gallery</button>
-          <button onClick={startCamera} style={{ flex: 1, background: showCamera ? '#ff2d55' : '#161616', border: 'none', borderRadius: 12, padding: 11, color: 'white', cursor: 'pointer', fontSize: 12 }}>📷 Camera</button>
-        </div>
-        <div style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: 16, marginBottom: 14, minHeight: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {showCamera ? (
-            <div style={{ position: 'relative', width: '100%' }}>
-              <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: 16 }} />
-              <button onClick={capturePhoto} style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', background: '#ff2d55', border: 'none', borderRadius: '50%', width: 58, height: 58, fontSize: 26, cursor: 'pointer' }}>📸</button>
-              <button onClick={stopCamera} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer', fontSize: 14 }}>✕</button>
-            </div>
-          ) : selectedFile?.type?.startsWith('image/') ? (
-            <img src={selectedFile.url} alt="" style={{ width: '100%', borderRadius: 16 }} />
-          ) : selectedFile?.type?.startsWith('video/') ? (
-            <video src={selectedFile.url} controls style={{ width: '100%', borderRadius: 16 }} />
-          ) : (
-            <label style={{ textAlign: 'center', cursor: 'pointer', padding: 40 }}>
-              <div style={{ fontSize: 44, marginBottom: 10 }}>📁</div>
-              <div style={{ color: '#555', fontSize: 13 }}>Tap to choose from gallery</div>
-              <input type="file" accept="video/*,image/*" onChange={handleFileSelect} style={{ display: 'none' }} />
-            </label>
-          )}
-        </div>
-        <textarea placeholder="Write a caption..." value={description} onChange={e => setDescription(e.target.value)} style={{ width: '100%', background: '#141414', border: '1px solid #1e1e1e', borderRadius: 12, padding: 12, color: 'white', minHeight: 80, outline: 'none', fontSize: 13, resize: 'none', boxSizing: 'border-box' }} />
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// FRIENDS FEED
-// ============================================
-const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast }) => {
-  const [search, setSearch] = useState('');
-  const friendsVideos = useMemo(() => videos.filter(v => friends.includes(v.userId)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)), [friends, videos]);
-  const filtered = useMemo(() => !search ? friendsVideos : friendsVideos.filter(v => v.username.toLowerCase().includes(search.toLowerCase()) || v.description.toLowerCase().includes(search.toLowerCase())), [friendsVideos, search]);
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid #1a1a1a' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#161616', borderRadius: 24, padding: '8px 14px' }}><span>🔍</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search friend videos..." style={{ flex: 1, background: 'none', border: 'none', color: 'white', outline: 'none', fontSize: 13 }} /></div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {filtered.length === 0 ? <div style={{ textAlign: 'center', padding: 60, color: '#555' }}><div style={{ fontSize: 44, marginBottom: 12 }}>👥</div><div>No friend videos yet</div><div style={{ fontSize: 12, marginTop: 8, color: '#666' }}>Follow more people to see their posts!</div></div> : (
-          <div style={{ padding: 14 }}>
-            {filtered.map(video => (
-              <div key={video.id} style={{ background: '#141414', borderRadius: 16, marginBottom: 14, overflow: 'hidden', border: '1px solid #1e1e1e' }}>
-                <div style={{ background: '#000', minHeight: 160 }}><video src={video.videoUrl} style={{ width: '100%', maxHeight: 200 }} controls /></div>
-                <div style={{ padding: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <div onClick={() => onViewProfile?.(video.userId)} style={{ width: 38, height: 38, borderRadius: '50%', background: video.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 14, cursor: 'pointer' }}>{video.avatar}</div>
-                    <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600, fontSize: 13, cursor: 'pointer' }} onClick={() => onViewProfile?.(video.userId)}>@{video.username}</div><div style={{ color: '#555', fontSize: 11 }}>{formatNumber(video.views)} views</div></div>
-                    <button onClick={() => onMessage?.(video.userId)} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '6px 12px', color: 'white', fontSize: 11, cursor: 'pointer' }}>💬</button>
-                  </div>
-                  <p style={{ color: '#bbb', fontSize: 12 }}>{video.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// SOUND LIBRARY PAGE
-// ============================================
-const SoundLibraryPage = ({ onSelectSound, onClose }) => {
-  const [search, setSearch] = useState('');
-  const filtered = useMemo(() => !search ? SOUND_LIBRARY : SOUND_LIBRARY.filter(s => s.name.toLowerCase().includes(search.toLowerCase())), [search]);
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid #1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ color: 'white', fontSize: 18 }}>🎵 Sounds</h2>
-        <button onClick={onClose} style={{ background: '#161616', border: 'none', borderRadius: 20, padding: '8px 14px', color: 'white', cursor: 'pointer' }}>Close</button>
-      </div>
-      <div style={{ padding: '10px 16px' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search sounds..." style={{ width: '100%', background: '#161616', border: 'none', borderRadius: 20, padding: '10px 16px', color: 'white', outline: 'none', fontSize: 13, boxSizing: 'border-box' }} />
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px' }}>
-        {filtered.map(sound => (
-          <div key={sound.id} onClick={() => onSelectSound(sound)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px', background: '#141414', borderRadius: 14, marginBottom: 8, cursor: 'pointer' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#ff2d55,#af52de)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🎵</div>
-            <div style={{ flex: 1 }}><div style={{ color: 'white', fontWeight: 600, fontSize: 13 }}>{sound.name}</div><div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>{sound.artist} · {sound.duration}</div></div>
-            {sound.popular && <span style={{ color: '#ffd700', fontSize: 11 }}>🔥</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// ANALYTICS PAGE
-// ============================================
-const CreatorAnalytics = ({ user, videos, onClose }) => {
-  const userVideos = videos.filter(v => v.userId === user?.id);
-  const totalViews = userVideos.reduce((s,v)=>s+v.views,0);
-  const totalLikes = userVideos.reduce((s,v)=>s+v.likes,0);
-  const weeklyData = [1200,1450,1800,2100,2500,2900,3400];
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 200, overflow: 'auto' }}>
-      <div style={{ padding: '70px 20px 20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ color: 'white', fontSize: 24 }}>📊 Analytics</h2>
-          <button onClick={onClose} style={{ background: '#1a1a1a', border: 'none', borderRadius: 20, padding: '8px 16px', color: 'white', cursor: 'pointer' }}>Close</button>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 14, marginBottom: 20 }}>
-          {[['Total Views',formatNumber(totalViews),'#06d6a0'],['Total Likes',formatNumber(totalLikes),'#ff2d55'],['Videos',String(userVideos.length),'#af52de'],['Coins',String(user?.coins||0),'#ffd700']].map(([label,val,color])=>(
-            <div key={label} style={{ background: '#1a1a1a', borderRadius: 16, padding: 18 }}>
-              <div style={{ color: '#888', fontSize: 11 }}>{label}</div>
-              <div style={{ color: color, fontSize: 26, fontWeight: 700, marginTop: 4 }}>{val}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ background: '#1a1a1a', borderRadius: 16, padding: 18, marginBottom: 16 }}>
-          <h3 style={{ color: 'white', marginBottom: 14, fontSize: 14 }}>📈 Weekly Growth</h3>
-          <div style={{ height: 120, display: 'flex', alignItems: 'flex-end', gap: 6 }}>
-            {weeklyData.map((v,i) => <div key={i} style={{ flex: 1, height: `${(v/4000)*100}%`, background: 'linear-gradient(180deg,#ff2d55,#af52de)', borderRadius: 6 }} />)}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=><span key={d} style={{ color: '#555', fontSize: 10 }}>{d}</span>)}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// QR CODE PAGE
-// ============================================
-const QRCodePage = ({ user, onClose }) => (
-  <div style={{ position: 'fixed', inset: 0, background: '#0a0a0a', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-    <div style={{ background: '#141414', borderRadius: 28, padding: 32, textAlign: 'center', maxWidth: 300, width: '100%', margin: '0 20px' }}>
-      <button onClick={onClose} style={{ position: 'absolute', marginLeft: 100, marginTop: -16, background: '#222', border: 'none', borderRadius: '50%', width: 32, height: 32, color: 'white', cursor: 'pointer' }}>✕</button>
-      <div style={{ fontSize: 70, marginBottom: 14 }}>📱</div>
-      <div style={{ width: 180, height: 180, background: 'white', margin: '0 auto 20px', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundImage: 'repeating-linear-gradient(45deg,#000 0,#000 2px,#fff 2px,#fff 8px)' }}>
-        <div style={{ width: 140, height: 140, background: 'white', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-          <div style={{ fontSize: 36 }}>🎬</div>
-          <div style={{ fontSize: 11, fontWeight: 'bold', marginTop: 6 }}>@{user?.username}</div>
-        </div>
-      </div>
-      <h3 style={{ color: 'white', marginBottom: 6 }}>Scan to Follow</h3>
-      <p style={{ color: '#888', fontSize: 12 }}>@{user?.username} on Dagu</p>
-      <button style={{ marginTop: 16, width: '100%', background: '#ff2d55', border: 'none', borderRadius: 24, padding: 12, color: 'white', fontWeight: 600, cursor: 'pointer' }}>Share Profile</button>
-    </div>
-  </div>
-);
 
 // ============================================
 // MAIN APP
@@ -1667,7 +1804,6 @@ export default function DaguFixedApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [videos, setVideos] = useState([]);
   const [stories, setStories] = useState([]);
-  const [friends, setFriends] = useState([]);
   const [activeTab, setActiveTab] = useState('home');
   const [toast, setToast] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -1684,19 +1820,42 @@ export default function DaguFixedApp() {
 
   const showToast = useCallback((message, type = 'info') => setToast({ message, type }), []);
 
- useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'users'), snap => {
+  // ✅ ALL DATA FROM FIREBASE — NO HARDCODED DEMO DATA
+  useEffect(() => {
+    // Listen for all real users
+    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
       setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    setVideos([
-      { id: 'v1', userId: 'u2', username: 'jordan_taylor', avatar: 'J', avatarColor: '#00C7BE', verified: false, description: 'Check this out! 🔥 #fyp #trending', song: 'Sunset Dreams', songId: 's1', videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', likes: 1502, comments: 89, shares: 45, views: 10000, hashtags: ['#fyp','#trending'], category: 'foryou', createdAt: new Date() },
-      { id: 'v2', userId: 'u1', username: 'alex_wonders', avatar: 'A', avatarColor: '#FF2D55', verified: true, description: 'Golden hour magic ✨ #viral #lifestyle', song: 'Creative Flow', songId: 's2', videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4', likes: 5001, comments: 234, shares: 120, views: 50000, hashtags: ['#viral','#lifestyle'], category: 'foryou', createdAt: new Date() },
-      { id: 'v3', userId: 'u3', username: 'sam_creates', avatar: 'S', avatarColor: '#AF52DE', verified: true, description: 'Art process ✏️ #art #creative', song: 'Urban Vibes', songId: 's3', videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFunflies.mp4', likes: 3200, comments: 156, shares: 89, views: 25000, hashtags: ['#art','#creative'], category: 'foryou', createdAt: new Date() },
-    ]);
-    setFriends([]);
-    setFollowed([]);
-    return () => unsub();
+
+    // Listen for all real videos (sorted by newest first)
+    const unsubVideos = onSnapshot(
+      query(collection(db, 'videos'), orderBy('createdAt', 'desc')),
+      snap => setVideos(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+
+    // Listen for stories (not expired — within last 24h)
+    const unsubStories = onSnapshot(
+      query(collection(db, 'stories'), orderBy('timestamp', 'desc')),
+      snap => {
+        const now = Date.now();
+        const validStories = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(s => {
+            // Keep stories less than 24 hours old
+            const ts = s.timestamp?.toDate?.() || (s.timestamp instanceof Date ? s.timestamp : new Date(s.timestamp));
+            return (now - ts.getTime()) < 24 * 60 * 60 * 1000;
+          });
+        setStories(validStories);
+      }
+    );
+
+    return () => { unsubUsers(); unsubVideos(); unsubStories(); };
   }, []);
+
+  // Sync followed list when currentUser loads
+  useEffect(() => {
+    if (currentUser?.following) setFollowed(currentUser.following);
+  }, [currentUser?.id]);
 
   const handleLogin = async (identifier, password) => {
     try {
@@ -1704,56 +1863,70 @@ export default function DaguFixedApp() {
       if (!snap.empty) {
         const userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
         setCurrentUser(userData);
+        setFollowed(userData.following || []);
         showToast(`Welcome back, @${userData.username}! 👋`, 'success');
       } else {
-        const newUsername = identifier.split('@')[0];
+        const newUsername = identifier.split('@')[0].replace(/[^a-z0-9_]/gi, '_');
         const newUser = {
           username: newUsername, email: identifier,
           avatar: newUsername[0].toUpperCase(),
           avatarColor: `hsl(${Math.random()*360},70%,60%)`,
           verified: false, bio: 'New to Dagu! 🎬',
           followers: [], following: [],
-          coins: 500, walletBalance: 500,
+          coins: 500, walletBalance: 0,
           level: 1, streak: 1, subscription: 'free', photoURL: ''
         };
         const newRef = doc(collection(db, 'users'));
         await setDoc(newRef, newUser);
         setCurrentUser({ id: newRef.id, ...newUser });
+        setFollowed([]);
         showToast(`Welcome to Dagu, @${newUsername}! 🎉`, 'success');
       }
-    } catch (err) {
-      showToast('Login failed. Try again.', 'error');
-    }
+    } catch { showToast('Login failed. Try again.', 'error'); }
   };
 
   const handleSignup = async (identifier, username, fullName, password) => {
     try {
+      // Check if username taken
+      const existing = await getDocs(query(collection(db, 'users'), where('username', '==', username)));
+      if (!existing.empty) { showToast('Username already taken', 'error'); return; }
       const newUser = {
         username, email: identifier, fullName,
         avatar: username[0].toUpperCase(),
         avatarColor: `hsl(${Math.random()*360},70%,60%)`,
         verified: false, bio: 'New to Dagu! 🎬',
         followers: [], following: [],
-        coins: 500, walletBalance: 500,
+        coins: 500, walletBalance: 0,
         level: 1, streak: 1, subscription: 'free', photoURL: ''
       };
       const newRef = doc(collection(db, 'users'));
       await setDoc(newRef, newUser);
       setCurrentUser({ id: newRef.id, ...newUser });
+      setFollowed([]);
       showToast(`Welcome to Dagu, @${username}! 🎉`, 'success');
-    } catch (err) {
-      showToast('Signup failed. Try again.', 'error');
-    }
+    } catch { showToast('Signup failed. Try again.', 'error'); }
   };
 
-  const handleLogout = () => { setCurrentUser(null); showToast('Logged out', 'info'); };
-  const handleLogout = () => { setCurrentUser(null); showToast('Logged out', 'info'); };
-  
-  const toggleFollow = (userId) => {
-    setFollowed(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
-    showToast(followed.includes(userId) ? 'Unfollowed' : 'Followed!', 'success');
+  const handleLogout = () => { setCurrentUser(null); setFollowed([]); showToast('Logged out', 'info'); };
+
+  // Follow/unfollow updates both users in Firestore
+  const toggleFollow = async (userId) => {
+    if (!currentUser?.id) return;
+    const isFollowing = followed.includes(userId);
+    const newFollowed = isFollowing ? followed.filter(id => id !== userId) : [...followed, userId];
+    setFollowed(newFollowed);
+    showToast(isFollowing ? 'Unfollowed' : 'Followed! 🎉', 'success');
+    // Update current user's following list
+    await updateDoc(doc(db, 'users', currentUser.id), {
+      following: isFollowing ? arrayRemove(userId) : arrayUnion(userId)
+    });
+    // Update target user's followers list
+    await updateDoc(doc(db, 'users', userId), {
+      followers: isFollowing ? arrayRemove(currentUser.id) : arrayUnion(currentUser.id)
+    });
+    setCurrentUser(u => ({ ...u, following: newFollowed }));
   };
-  
+
   const handleViewProfile = (userId) => {
     const user = users.find(u => u.id === userId);
     if (user) setViewingProfile(user);
@@ -1763,23 +1936,17 @@ export default function DaguFixedApp() {
     setActiveTab('inbox');
   };
 
-  const handleAddStory = (story) => {
-    setStories(prev => [story, ...prev]);
-  };
+  // Story added locally (Firestore listener will pick it up too)
+  const handleAddStory = (story) => {};
 
   const handleViewStory = (user) => {
     const userStories = stories.filter(s => s.userId === user.id);
-    if (userStories.length > 0) {
-      setStoryViewerUser(user);
-      setShowStoryViewer(true);
-    } else {
-      showToast('No stories to view', 'info');
-    }
+    if (userStories.length > 0) { setStoryViewerUser(user); setShowStoryViewer(true); }
+    else showToast('No stories to view', 'info');
   };
 
-  const handleAddVideo = (newVideo) => {
-    setVideos(prev => [newVideo, ...prev]);
-  };
+  // Video added locally (Firestore listener will add it to state automatically)
+  const handleAddVideo = (newVideo) => {};
 
   const getStoryUsers = () => {
     const userIds = [...new Set(stories.map(s => s.userId))];
@@ -1790,23 +1957,17 @@ export default function DaguFixedApp() {
   const currentStoryIndex = storyUserList.findIndex(u => u?.id === storyViewerUser?.id);
 
   const goToNextStoryUser = () => {
-    if (currentStoryIndex < storyUserList.length - 1) {
-      setStoryViewerUser(storyUserList[currentStoryIndex + 1]);
-    } else {
-      setShowStoryViewer(false);
-      setStoryViewerUser(null);
-    }
+    if (currentStoryIndex < storyUserList.length - 1) setStoryViewerUser(storyUserList[currentStoryIndex + 1]);
+    else { setShowStoryViewer(false); setStoryViewerUser(null); }
   };
 
   const goToPrevStoryUser = () => {
-    if (currentStoryIndex > 0) {
-      setStoryViewerUser(storyUserList[currentStoryIndex - 1]);
-    }
+    if (currentStoryIndex > 0) setStoryViewerUser(storyUserList[currentStoryIndex - 1]);
   };
 
   if (!currentUser) {
     return (
-      <div style={{height:'100dvh',display:'flex',alignItems:'center',justifyContent:'center',background:'#0a0a0a'}}>
+      <div style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
         <AuthScreen onLogin={handleLogin} onSignup={handleSignup} />
       </div>
     );
@@ -1836,19 +1997,20 @@ export default function DaguFixedApp() {
       {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} onClose={() => setShowCall(null)} />}
       {showLiveStream && <LiveStream streamer={showLiveStream} onClose={() => setShowLiveStream(null)} showToast={showToast} currentUser={currentUser} />}
       {showStoryViewer && storyViewerUser && (
-        <StoryViewer 
-          stories={stories} 
-          user={storyViewerUser} 
-          currentUser={currentUser} 
-          onClose={() => { setShowStoryViewer(false); setStoryViewerUser(null); }} 
-          onNextUser={goToNextStoryUser}
-          onPrevUser={goToPrevStoryUser}
+        <StoryViewer stories={stories} user={storyViewerUser} currentUser={currentUser}
+          onClose={() => { setShowStoryViewer(false); setStoryViewerUser(null); }}
+          onNextUser={goToNextStoryUser} onPrevUser={goToPrevStoryUser}
         />
       )}
-      {showSoundLibrary && <SoundLibraryPage onSelectSound={s => { showToast?.(`Selected: ${s.name}`, 'success'); setShowSoundLibrary(false); }} onClose={() => setShowSoundLibrary(false)} />}
+      {showSoundLibrary && <SoundLibraryPage onSelectSound={s => { showToast(`Selected: ${s.name}`, 'success'); setShowSoundLibrary(false); }} onClose={() => setShowSoundLibrary(false)} />}
       {showQRCode && <QRCodePage user={currentUser} onClose={() => setShowQRCode(false)} />}
       {showAnalytics && <CreatorAnalytics user={currentUser} videos={videos} onClose={() => setShowAnalytics(false)} />}
-      {viewingProfile && <UserProfileModal user={viewingProfile} currentUser={currentUser} onClose={() => setViewingProfile(null)} onFollow={toggleFollow} onMessage={uid => { handleMessage(uid); setViewingProfile(null); }} onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }} onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }} followed={followed} showToast={showToast} />}
+      {viewingProfile && <UserProfileModal user={viewingProfile} currentUser={currentUser} onClose={() => setViewingProfile(null)} onFollow={toggleFollow}
+        onMessage={uid => { handleMessage(uid); setViewingProfile(null); }}
+        onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }}
+        onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); setViewingProfile(null); }}
+        followed={followed} showToast={showToast}
+      />}
 
       {/* Stories Row */}
       {activeTab === 'home' && !showStoryViewer && !showLiveStream && (
@@ -1859,7 +2021,7 @@ export default function DaguFixedApp() {
       {activeTab !== 'profile' && (
         <div style={{ padding: '10px 14px', background: '#0a0a0a', borderBottom: '1px solid #141414', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <button onClick={() => setShowSearch(true)} style={{ flex: 1, background: '#141414', border: '1px solid #1e1e1e', borderRadius: 24, padding: '9px 14px', color: '#555', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-            <span>🔍</span> Search videos, users...
+            <span>🔍</span> Search users, videos...
           </button>
           <button onClick={() => setShowSoundLibrary(true)} style={{ background: '#141414', border: '1px solid #1e1e1e', borderRadius: '50%', width: 38, height: 38, cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🎵</button>
         </div>
@@ -1868,16 +2030,14 @@ export default function DaguFixedApp() {
       {/* Main Content */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0 }}>
         {showSearch && <SearchOverlay onClose={() => setShowSearch(false)} videos={videos} users={users} onViewProfile={uid => { handleViewProfile(uid); setShowSearch(false); }} />}
-        {showCamera && <CameraUpload onUpload={handleAddVideo} onClose={() => setShowCamera(false)} showToast={showToast} />}
+        {showCamera && <CameraUpload onUpload={handleAddVideo} onClose={() => setShowCamera(false)} showToast={showToast} currentUser={currentUser} />}
 
         {!showSearch && !showCamera && (
           <>
             {activeTab === 'home' && (
-              <HomeFeed
-                videos={videos} currentUser={currentUser}
+              <HomeFeed videos={videos} currentUser={currentUser}
                 onLike={() => {}} onComment={() => {}} onShare={() => {}}
-                onFollow={toggleFollow}
-                onMessage={handleMessage}
+                onFollow={toggleFollow} onMessage={handleMessage}
                 onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); }}
                 onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); }}
                 onDuet={() => showToast?.('Duet mode ready', 'info')}
@@ -1889,15 +2049,11 @@ export default function DaguFixedApp() {
               />
             )}
             {activeTab === 'friends' && (
-              <FriendsFeed 
-                friends={followed} 
-                videos={videos} 
-                currentUser={currentUser}
-                onMessage={handleMessage}
+              <FriendsFeed friends={followed} videos={videos} currentUser={currentUser} users={users}
+                onMessage={uid => { handleMessage(uid); setActiveTab('inbox'); }}
                 onVoiceCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'audio', contactName:u?.username, contactAvatar:u?.avatar }); }}
                 onVideoCall={uid => { const u = users.find(uu=>uu.id===uid); setShowCall({ type:'video', contactName:u?.username, contactAvatar:u?.avatar }); }}
-                onViewProfile={handleViewProfile}
-                showToast={showToast}
+                onViewProfile={handleViewProfile} showToast={showToast}
               />
             )}
             {activeTab === 'create' && (
@@ -1916,12 +2072,8 @@ export default function DaguFixedApp() {
               <InboxPage users={users} currentUser={currentUser} showToast={showToast} />
             )}
             {activeTab === 'profile' && (
-              <ProfilePage
-                user={currentUser}
-                setCurrentUser={setCurrentUser}
-                onLogout={handleLogout}
-                users={users}
-                showToast={showToast}
+              <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout}
+                users={users} showToast={showToast}
                 onShowAnalytics={() => setShowAnalytics(true)}
                 onShowQRCode={() => setShowQRCode(true)}
               />
