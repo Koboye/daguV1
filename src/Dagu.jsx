@@ -1124,7 +1124,6 @@ const InboxPage = ({ users, currentUser, showToast }) => {
           <div style={{ textAlign: 'center', padding: 60, color: '#555' }}>
             <div style={{ fontSize: 44, marginBottom: 12 }}>💬</div>
             <div>No users yet</div>
-            <div style={{ fontSize: 12, marginTop: 8, color: '#666' }}>Sign up more users to start chatting!</div>
           </div>
         )}
         {otherUsers.map(u => (
@@ -1145,7 +1144,6 @@ const InboxPage = ({ users, currentUser, showToast }) => {
     </div>
   );
 };
-
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0a0a0a' }}>
       <div style={{ padding: '12px 14px', borderBottom: '1px solid #1a1a1a', display: 'flex', alignItems: 'center', gap: 12 }}>
