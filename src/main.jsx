@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
-import App from "./dagu.jsx";
+import App from "./Dagu.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import "./index.css";
