@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, increment, arrayUnion, arrayRemove
+  getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, increment
 } from 'firebase/firestore';
 import emailjs from '@emailjs/browser';
 
@@ -39,7 +39,14 @@ const THEME = {
   blur: 'backdrop-filter blur(30px)'
 };
 
-// Global simulated network delays/fallbacks for complex media uploads
+const CLIENT_USER = {
+  id: 'local_host_user',
+  username: 'dagu_creator',
+  name: 'Dagu Star',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+  bio: 'Testing out the new Dagu UI engine live on Vercel! 🇪🇹✨'
+};
+
 const globalInputStyle = {
   width: '100%', padding: '14px 16px', background: 'rgba(255,255,255,0.05)',
   border: `1px solid ${THEME.colors.border}`, borderRadius: '14px',
@@ -96,11 +103,11 @@ const VideoPostCard = React.memo(({ post, isActive, globalMuted, toggleMute, onL
       {/* Creator Overlay Information */}
       <div style={{ position: 'absolute', bottom: '110px', left: '20px', right: '90px', zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          <img src={post.userAvatar} alt="" onClick={() => onViewProfile(post.userId)} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${THEME.colors.accentSolid}`, cursor: 'pointer' }} />
+          <img src={post.userAvatar || CLIENT_USER.avatar} alt="" onClick={() => onViewProfile(post.userId || 'demo')} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${THEME.colors.accentSolid}`, cursor: 'pointer' }} />
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h4 onClick={() => onViewProfile(post.userId)} style={{ color: '#fff', margin: 0, fontWeight: 700, cursor: 'pointer' }}>@{post.username}</h4>
-              <button onClick={() => onFollow(post.userId)} style={{ background: isFollowing ? 'rgba(255,255,255,0.2)' : THEME.colors.accent, border: 'none', borderRadius: '20px', padding: '4px 10px', color: '#fff', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+              <h4 onClick={() => onViewProfile(post.userId || 'demo')} style={{ color: '#fff', margin: 0, fontWeight: 700, cursor: 'pointer' }}>@{post.username || 'anonymous'}</h4>
+              <button onClick={() => onFollow(post.userId || 'demo')} style={{ background: isFollowing ? 'rgba(255,255,255,0.2)' : THEME.colors.accent, border: 'none', borderRadius: '20px', padding: '4px 10px', color: '#fff', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
                 {isFollowing ? 'Following' : 'Follow'}
               </button>
             </div>
@@ -110,7 +117,7 @@ const VideoPostCard = React.memo(({ post, isActive, globalMuted, toggleMute, onL
         <p style={{ color: '#fff', fontSize: '14px', margin: 0, textShadow: '0 2px 4px rgba(0,0,0,0.6)' }}>{post.description}</p>
       </div>
 
-      {/* Side HUD Interaction Dock (Like, Comment, Share) */}
+      {/* Side HUD Interaction Dock */}
       <div style={{ position: 'absolute', bottom: '130px', right: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
         <button onClick={() => onLike(post.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center' }}>
           <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>❤️</div>
@@ -122,7 +129,7 @@ const VideoPostCard = React.memo(({ post, isActive, globalMuted, toggleMute, onL
           <span style={{ color: '#fff', fontSize: '12px', fontWeight: '600' }}>{post.commentCount || 0}</span>
         </button>
 
-        <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Share link copied to clipboard node!"); }} style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center' }}>
+        <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Share link copied to clipboard!"); }} style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'center' }}>
           <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>🔗</div>
           <span style={{ color: '#fff', fontSize: '11px' }}>Share</span>
         </button>
@@ -172,20 +179,18 @@ const CommentsSheet = ({ post, currentUser, onClose }) => {
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', fontSize: '18px', cursor: 'pointer' }}>✕</button>
       </div>
 
-      {/* Render Lists */}
       <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px' }}>
         {commentsList.map(c => (
           <div key={c.id} style={{ display: 'flex', gap: '10px', marginBottom: '14px', alignItems: 'flex-start' }}>
             <img src={c.avatar} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
             <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 14px', borderRadius: '14px', maxWidth: '80%' }}>
-              <span style={{ color: THEION_COLOR = THEME.colors.cyan, fontSize: '12px', fontWeight: 'bold', display: 'block' }}>@{c.username}</span>
+              <span style={{ color: THEME.colors.cyan, fontSize: '12px', fontWeight: 'bold', display: 'block' }}>@{c.username}</span>
               <p style={{ color: '#fff', margin: '4px 0 0', fontSize: '13px' }}>{c.text}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Rich Inputs Controls Console */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '16px' }}>
         {attachedFile && <div style={{ color: THEME.colors.cyan, fontSize: '12px' }}>📎 Locked Document Node: {attachedFile}</div>}
         {voiceRecording && <div style={{ color: '#ff3b30', fontSize: '12px' }}>🔴 Recording Stream Engaged...</div>}
@@ -211,7 +216,6 @@ const UserProfileView = ({ userId, currentUser, onFollowToggle, isFollowing, onB
   const userPosts = posts.filter(p => p.userId === userId);
 
   useEffect(() => {
-    // Generate static mockup database maps dynamically for simplicity
     if (userId === currentUser.id) {
       setProfile(currentUser);
     } else {
@@ -241,7 +245,6 @@ const UserProfileView = ({ userId, currentUser, onFollowToggle, isFollowing, onB
         <p style={{ color: THEME.colors.cyan, margin: 0 }}>@{profile.username}</p>
         <p style={{ color: THEME.colors.textMuted, marginTop: '8px', fontSize: '14px' }}>{profile.bio}</p>
 
-        {/* Following Analytics Ticker Box */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: '30px', margin: '20px 0' }}>
           <div><strong>{profile.followers?.toLocaleString() || 0}</strong><div style={{ color: THEME.colors.textMuted, fontSize: '12px' }}>Followers</div></div>
           <div><strong>{profile.following?.toLocaleString() || 0}</strong><div style={{ color: THEME.colors.textMuted, fontSize: '12px' }}>Following</div></div>
@@ -254,7 +257,6 @@ const UserProfileView = ({ userId, currentUser, onFollowToggle, isFollowing, onB
         )}
       </div>
 
-      {/* Grid Portfolio Array Layout Engine */}
       <div style={{ padding: '0 4px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
         {userPosts.map(p => (
           <div key={p.id} style={{ aspectRatio: '9/16', background: '#111', overflow: 'hidden', position: 'relative' }}>
@@ -298,14 +300,13 @@ const SettingsDashboard = ({ currentUser, updateProfilePic, onDeleteAccount, onB
 // 📁 MASTER APPLICATION SYSTEM GATEWAY
 // ============================================================================
 export default function DaguApp() {
-  const [viewState, setViewState] = useState('feed'); // feed, studio, profile, settings
+  const [viewState, setViewState] = useState('feed'); 
   const [posts, setPosts] = useState([]);
   const [globalMuted, setGlobalMuted] = useState(false);
   const [activePostId, setActivePostId] = useState(null);
   const [commentTargetPost, setCommentTargetPost] = useState(null);
   const [selectedProfileId, setSelectedProfileId] = useState(null);
 
-  // Core User Matrix State Hooks
   const [currentUser, setCurrentUser] = useState(CLIENT_USER);
   const [followingList, setFollowingList] = useState([]);
 
@@ -318,7 +319,7 @@ export default function DaguApp() {
       setPosts(records);
       if (records.length > 0 && !activePostId) setActivePostId(records[0].id);
     });
-  }, []);
+  }, [activePostId]);
 
   const handleScroll = () => {
     const target = scrollContainerRef.current;
@@ -343,7 +344,7 @@ export default function DaguApp() {
   };
 
   const purgeAccountDestruction = async () => {
-    if (window.confirm("Are you absolutely sure you want to trigger structural account deletion like on Facebook or Twitter? This cannot be undone.")) {
+    if (window.confirm("Are you absolutely sure you want to trigger structural account deletion? This cannot be undone.")) {
       await dispatchEmailAlert('CRITICAL_ACCOUNT_DELETION_REQUEST', { user: currentUser });
       alert("Account deletion transaction dispatched to master queue.");
       window.location.reload();
@@ -361,7 +362,7 @@ export default function DaguApp() {
                 <VideoPostCard
                   post={post} isActive={activePostId === post.id} globalMuted={globalMuted}
                   toggleMute={() => setGlobalMuted(!globalMuted)} onLike={handleLike}
-                  onFollow={handleFollowToggle} isFollowing={followingList.includes(post.userId)}
+                  onFollow={handleFollowToggle} isFollowing={followingList.includes(post.userId || 'demo')}
                   onOpenComments={(p) => setCommentTargetPost(p)}
                   onViewProfile={(uid) => { setSelectedProfileId(uid); setViewState('profile'); }}
                 />
@@ -379,13 +380,11 @@ export default function DaguApp() {
         )}
       </div>
 
-      {/* Comment Tray Architecture */}
       {commentTargetPost && (
         <CommentsSheet post={commentTargetPost} currentUser={currentUser} onClose={() => setCommentTargetPost(null)} />
       )}
 
-      {/* Global Interface Navigation Systems Dock */}
-      <div style={{ height: '84px', background: THEME.colors.card, backdropFilter: 'blur(30px)', borderTop: `1px solid ${THEME.colors.border}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', paddingBottom: '12px', boxSizing: 'border-box', zIndex: 100 }}>
+      <div style={{ height: '84px', background: THEME.colors.card, backdropFilter: 'blur(30px)', borderTop: `1px solid ${THEME.colors.border}`, display: 'flex', justifyContent: 'space-around', alignItems: 'center', paddingBottom: '12px', boxSizing: 'box-sizing', zIndex: 100 }}>
         <button onClick={() => setViewState('feed')} style={{ background: 'none', border: 'none', color: viewState === 'feed' ? '#fff' : THEME.colors.textMuted, cursor: 'pointer', fontSize: '11px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}><span>🎬</span>FEED</button>
         <button onClick={() => { setSelectedProfileId(currentUser.id); setViewState('profile'); }} style={{ background: 'none', border: 'none', color: viewState === 'profile' ? '#fff' : THEME.colors.textMuted, cursor: 'pointer', fontSize: '11px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}><span>👤</span>PROFILE</button>
         <button onClick={() => setViewState('settings')} style={{ background: 'none', border: 'none', color: viewState === 'settings' ? '#fff' : THEME.colors.textMuted, cursor: 'pointer', fontSize: '11px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}><span>⚙️</span>SETTINGS</button>
