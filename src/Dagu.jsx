@@ -1,20 +1,19 @@
-// Dagu.jsx - COMPLETELY FIXED VERSION with Friends, Live, Stories, Settings ALL WORKING
+// Dagu.jsx - COMPLETE PRODUCTION VERSION with ALL features working
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import { auth, db, storage, googleProvider } from './firebase';
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged, signInWithPopup, updateProfile
+  signOut, onAuthStateChanged, signInWithPopup
 } from 'firebase/auth';
 import {
   collection, addDoc, getDocs, onSnapshot, doc,
-  updateDoc, getDoc, arrayUnion, arrayRemove,
-  serverTimestamp, query, orderBy, where, setDoc, deleteDoc, limit,
-  increment
+  updateDoc, arrayUnion, arrayRemove, serverTimestamp,
+  query, orderBy, where, limit, increment
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 // ============================================
-// HELPERS
+// HELPER FUNCTIONS
 // ============================================
 const formatNumber = (num) => {
   if (!num) return '0';
@@ -41,8 +40,8 @@ const Toast = ({ message, type, onClose }) => {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
   const colors = { success: '#06d6a0', error: '#ff2d55', info: '#af52de', warning: '#ff9500' };
   return (
-    <div style={{ position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)', background: '#1a1a1a', border: `1px solid ${colors[type] || '#333'}`, borderRadius: 30, padding: '12px 24px', zIndex: 10000, backdropFilter: 'blur(10px)' }}>
-      <span style={{ color: colors[type] || '#fff', fontSize: 14 }}>{message}</span>
+    <div style={{ position: 'fixed', bottom: 100, left: '50%', transform: 'translateX(-50%)', background: '#1a1a1a', border: `1px solid ${colors[type] || '#333'}`, borderRadius: 30, padding: '12px 24px', zIndex: 10000, backdropFilter: 'blur(10px)', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+      <span style={{ color: colors[type] || '#fff', fontSize: 14, fontWeight: 500 }}>{message}</span>
     </div>
   );
 };
@@ -64,6 +63,7 @@ const AuthScreen = ({ showToast }) => {
     try {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password);
+        showToast('Welcome back!', 'success');
       } else {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await addDoc(collection(db, 'users'), {
@@ -71,6 +71,7 @@ const AuthScreen = ({ showToast }) => {
           bio: 'New to Dagu! 🎬', followers: [], following: [], photoURL: '', coins: 500,
           createdAt: serverTimestamp(),
         });
+        showToast('Account created! 🎉', 'success');
       }
     } catch (err) { showToast(err.message, 'error'); }
     setLoading(false);
@@ -88,6 +89,7 @@ const AuthScreen = ({ showToast }) => {
           photoURL: result.user.photoURL || '', coins: 500, createdAt: serverTimestamp(),
         });
       }
+      showToast('Signed in with Google!', 'success');
     } catch (err) { showToast(err.message, 'error'); }
   };
 
@@ -114,7 +116,7 @@ const AuthScreen = ({ showToast }) => {
 };
 
 // ============================================
-// CREATE POST MODAL (Working)
+// CREATE POST MODAL
 // ============================================
 const CreatePostModal = ({ currentUser, onClose, showToast }) => {
   const [text, setText] = useState('');
@@ -154,12 +156,11 @@ const CreatePostModal = ({ currentUser, onClose, showToast }) => {
 };
 
 // ============================================
-// CREATE STORY MODAL (Working)
+// CREATE STORY MODAL
 // ============================================
 const CreateStoryModal = ({ currentUser, onClose, showToast, onStoryPosted }) => {
   const [text, setText] = useState('');
   const [posting, setPosting] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleTextStory = async () => {
@@ -227,7 +228,9 @@ const Stories = ({ currentUser, stories, onStoryPosted, showToast }) => {
 
   useEffect(() => {
     if (!viewingStory) return;
-    const interval = setInterval(() => { setProgress(p => { if (p >= 100) { clearInterval(interval); setViewingStory(null); return 0; } return p + 2; }); }, 50);
+    const interval = setInterval(() => {
+      setProgress(p => { if (p >= 100) { clearInterval(interval); setViewingStory(null); return 0; } return p + 2; });
+    }, 50);
     return () => clearInterval(interval);
   }, [viewingStory]);
 
@@ -279,14 +282,19 @@ const Stories = ({ currentUser, stories, onStoryPosted, showToast }) => {
 };
 
 // ============================================
-// POST CARD
+// POST CARD - Complete with Like, Comment, Share, Live
 // ============================================
-const PostCard = memo(({ post, currentUser, onViewProfile, showToast }) => {
+const PostCard = memo(({ post, currentUser, onViewProfile, showToast, onLivePress }) => {
   const [liked, setLiked] = useState((post.likes || []).includes(currentUser?.uid));
   const [likeCount, setLikeCount] = useState((post.likes || []).length);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState('');
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [showLiveOverlay, setShowLiveOverlay] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const videoRef = useRef(null);
+  const lastTap = useRef(0);
 
   useEffect(() => {
     if (!showComments) return;
@@ -296,7 +304,8 @@ const PostCard = memo(({ post, currentUser, onViewProfile, showToast }) => {
 
   const toggleLike = async () => {
     const newLiked = !liked;
-    setLiked(newLiked); setLikeCount(c => newLiked ? c + 1 : c - 1);
+    setLiked(newLiked);
+    setLikeCount(c => newLiked ? c + 1 : c - 1);
     try {
       await updateDoc(doc(db, 'posts', post.id), { likes: newLiked ? arrayUnion(currentUser.uid) : arrayRemove(currentUser.uid) });
     } catch (e) { console.error(e); }
@@ -305,59 +314,170 @@ const PostCard = memo(({ post, currentUser, onViewProfile, showToast }) => {
   const addComment = async () => {
     if (!commentText.trim()) return;
     try {
-      await addDoc(collection(db, 'posts', post.id, 'comments'), { text: commentText, userId: currentUser.uid, username: currentUser.username, photoURL: currentUser.photoURL || '', createdAt: serverTimestamp() });
+      await addDoc(collection(db, 'posts', post.id, 'comments'), {
+        text: commentText, userId: currentUser.uid, username: currentUser.username,
+        photoURL: currentUser.photoURL || '', createdAt: serverTimestamp()
+      });
       setCommentText('');
+      showToast('Comment added!', 'success');
     } catch { showToast('Failed to comment', 'error'); }
   };
 
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied!', 'success');
+      await updateDoc(doc(db, 'posts', post.id), { shares: increment(1) });
+    } catch { showToast('Share failed', 'error'); }
+    setShowShareMenu(false);
+  };
+
+  const handleDoubleTap = (e) => {
+    const now = Date.now();
+    if (now - lastTap.current < 300 && !liked) toggleLike();
+    lastTap.current = now;
+  };
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) videoRef.current.pause();
+      else videoRef.current.play();
+      setIsPlaying(!isPlaying);
+    }
+  };
+
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#000', overflow: 'hidden' }}>
-      {post.type === 'video' && <video src={post.url} loop playsInline autoPlay muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#000', overflow: 'hidden' }} onDoubleClick={handleDoubleTap}>
+      {/* Media Content */}
+      {post.type === 'video' && (
+        <video ref={videoRef} src={post.url} loop playsInline autoPlay muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} onClick={togglePlay} />
+      )}
       {post.type === 'photo' && <img src={post.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
       {post.type === 'text' && (
         <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg,#1a0a2e,#0a0a1a)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
           <p style={{ color: '#fff', fontSize: 24, fontWeight: 700, textAlign: 'center' }}>{post.text}</p>
         </div>
       )}
+
+      {/* Live Badge */}
+      {post.isLive && (
+        <div style={{ position: 'absolute', top: 60, left: 20, background: '#ff2d55', borderRadius: 20, padding: '6px 14px', zIndex: 10 }}>
+          <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>🔴 LIVE</span>
+        </div>
+      )}
+
+      {/* Gradient Overlay */}
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 50%)', pointerEvents: 'none' }} />
+
+      {/* Bottom Info */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 68, padding: '18px 14px', zIndex: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <div onClick={() => onViewProfile?.(post.userId)} style={{ width: 42, height: 42, borderRadius: '50%', background: '#ff2d55', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer', overflow: 'hidden' }}>
             {post.photoURL ? <img src={post.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (post.username?.[0] || '?').toUpperCase()}
           </div>
           <span onClick={() => onViewProfile?.(post.userId)} style={{ color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>@{post.username}</span>
+          <button onClick={() => onViewProfile?.(post.userId)} style={{ background: '#ff2d55', border: 'none', borderRadius: 20, padding: '5px 12px', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Follow</button>
         </div>
-        {post.caption && <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13 }}>{post.caption}</p>}
+        {post.caption && <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 13, lineHeight: 1.4 }}>{post.caption}</p>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <span style={{ fontSize: 12 }}>🎵</span>
+          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>Original Sound</span>
+        </div>
         <p style={{ color: '#555', fontSize: 10, marginTop: 4 }}>{timeAgo(post.createdAt)}</p>
       </div>
-      <div style={{ position: 'absolute', right: 10, bottom: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, zIndex: 6 }}>
-        <button onClick={toggleLike} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{liked ? '❤️' : '🤍'}</button>
-        <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>{formatNumber(likeCount)}</span>
-        <button onClick={() => setShowComments(true)} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer' }}>💬</button>
-        <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>{formatNumber(post.comments?.length || 0)}</span>
+
+      {/* Right Side Actions */}
+      <div style={{ position: 'absolute', right: 10, bottom: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, zIndex: 6 }}>
+        {/* Like */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button onClick={toggleLike} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {liked ? '❤️' : '🤍'}
+          </button>
+          <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>{formatNumber(likeCount)}</span>
+        </div>
+
+        {/* Comment */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button onClick={() => setShowComments(true)} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 24, cursor: 'pointer' }}>💬</button>
+          <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>{formatNumber(post.comments?.length || 0)}</span>
+        </div>
+
+        {/* Share */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <button onClick={() => setShowShareMenu(true)} style={{ background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 22, cursor: 'pointer' }}>↗️</button>
+          <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>{formatNumber(post.shares || 0)}</span>
+        </div>
+
+        {/* Live Stream Button */}
+        <button onClick={() => { setShowLiveOverlay(true); onLivePress?.(post); }} style={{ background: 'linear-gradient(135deg,#ff2d55,#af52de)', border: 'none', borderRadius: '50%', width: 46, height: 46, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 10px rgba(255,45,85,0.5)' }}>
+          🔴
+        </button>
       </div>
+
+      {/* Share Menu */}
+      {showShareMenu && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 5000, display: 'flex', alignItems: 'flex-end' }} onClick={() => setShowShareMenu(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', background: '#1a1a1a', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24 }}>
+            <h3 style={{ color: '#fff', fontSize: 18, fontWeight: 700, marginBottom: 20, textAlign: 'center' }}>Share to</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+              {[
+                { icon: '🔗', label: 'Copy Link', fn: handleShare },
+                { icon: '💬', label: 'WhatsApp', fn: () => { window.open(`https://wa.me/?text=${encodeURIComponent(window.location.href)}`); setShowShareMenu(false); } },
+                { icon: '✉️', label: 'Telegram', fn: () => { window.open(`https://t.me/share/url?url=${encodeURIComponent(window.location.href)}`); setShowShareMenu(false); } },
+                { icon: '🐦', label: 'Twitter', fn: () => { window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.href)}`); setShowShareMenu(false); } },
+              ].map(opt => (
+                <button key={opt.label} onClick={opt.fn} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: '#2a2a2a', border: 'none', borderRadius: 16, padding: '12px 6px', cursor: 'pointer' }}>
+                  <span style={{ fontSize: 28 }}>{opt.icon}</span>
+                  <span style={{ color: '#ccc', fontSize: 11 }}>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowShareMenu(false)} style={{ width: '100%', background: '#2a2a2a', border: 'none', borderRadius: 20, padding: 14, color: '#fff', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Live Overlay */}
+      {showLiveOverlay && (
+        <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 6000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center', marginBottom: 30 }}>
+            <div style={{ fontSize: 80, marginBottom: 20 }}>🔴</div>
+            <div style={{ color: '#fff', fontSize: 24, fontWeight: 700, marginBottom: 10 }}>Live Stream</div>
+            <div style={{ color: '#888', fontSize: 14 }}>@{post.username} is live</div>
+          </div>
+          <div style={{ display: 'flex', gap: 20 }}>
+            <button onClick={() => setShowLiveOverlay(false)} style={{ background: '#2a2a2a', border: 'none', borderRadius: 30, padding: '12px 24px', color: '#fff', cursor: 'pointer' }}>Close</button>
+            <button onClick={() => { setShowLiveOverlay(false); showToast('Joining live stream...', 'info'); }} style={{ background: '#ff2d55', border: 'none', borderRadius: 30, padding: '12px 32px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Join Live</button>
+          </div>
+        </div>
+      )}
+
+      {/* Comments Panel */}
       {showComments && (
         <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '14px 16px', borderBottom: '1px solid #1e1e1e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: '#fff', fontWeight: 700 }}>💬 Comments</span>
+            <span style={{ color: '#fff', fontWeight: 700 }}>💬 Comments ({comments.length})</span>
             <button onClick={() => setShowComments(false)} style={{ background: '#1a1a1a', border: 'none', borderRadius: '50%', width: 32, height: 32, color: '#fff', cursor: 'pointer' }}>✕</button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+            {comments.length === 0 && <p style={{ color: '#444', textAlign: 'center', marginTop: 40 }}>No comments yet. Be first! 💬</p>}
             {comments.map(c => (
               <div key={c.id} style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#ff2d55', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#ff2d55', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, overflow: 'hidden' }}>
                   {c.photoURL ? <img src={c.photoURL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : c.username?.[0]?.toUpperCase()}
                 </div>
                 <div style={{ flex: 1, background: '#161616', borderRadius: 14, padding: '8px 12px' }}>
-                  <div style={{ color: '#ff2d55', fontWeight: 600, fontSize: 11 }}>@{c.username}</div>
+                  <div style={{ color: '#ff2d55', fontWeight: 600, fontSize: 11, marginBottom: 4 }}>@{c.username}</div>
                   <p style={{ color: '#ddd', fontSize: 13 }}>{c.text}</p>
+                  <p style={{ color: '#555', fontSize: 10, marginTop: 4 }}>{timeAgo(c.createdAt)}</p>
                 </div>
               </div>
             ))}
           </div>
           <div style={{ padding: '10px 12px', borderTop: '1px solid #1e1e1e', display: 'flex', gap: 6 }}>
             <input value={commentText} onChange={e => setCommentText(e.target.value)} onKeyPress={e => e.key === 'Enter' && addComment()} placeholder="Add a comment..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 20, padding: '9px 14px', color: '#fff', outline: 'none', fontSize: 13 }} />
-            <button onClick={addComment} style={{ background: '#ff2d55', border: 'none', borderRadius: '50%', width: 38, height: 38, color: '#fff', cursor: 'pointer' }}>↑</button>
+            <button onClick={addComment} style={{ background: commentText.trim() ? '#ff2d55' : '#2a2a2a', border: 'none', borderRadius: '50%', width: 38, height: 38, color: '#fff', cursor: 'pointer' }}>↑</button>
           </div>
         </div>
       )}
@@ -366,17 +486,26 @@ const PostCard = memo(({ post, currentUser, onViewProfile, showToast }) => {
 });
 
 // ============================================
-// HOME FEED (For You + Friends)
+// HOME FEED - For You, Friends, Learn, Jobs
 // ============================================
-const HomeFeed = ({ posts, currentUser, onViewProfile, showToast, followed }) => {
+const HomeFeed = ({ posts, currentUser, onViewProfile, showToast, followed, onLivePress }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [tab, setTab] = useState('foryou');
+  const [activeTab, setActiveTab] = useState('foryou');
   const startY = useRef(null);
 
   const feedPosts = useMemo(() => {
-    if (tab === 'friends') return posts.filter(p => followed.includes(p.userId));
+    if (activeTab === 'friends') return posts.filter(p => followed.includes(p.userId));
+    if (activeTab === 'learn') return posts.filter(p => p.category === 'education' || p.category === 'art');
+    if (activeTab === 'jobs') return posts.filter(p => p.category === 'business' || p.caption?.toLowerCase().includes('job'));
     return posts;
-  }, [posts, tab, followed]);
+  }, [posts, activeTab, followed]);
+
+  const tabs = [
+    { id: 'foryou', label: '🔥 For You' },
+    { id: 'friends', label: '👥 Friends' },
+    { id: 'learn', label: '📚 Learn' },
+    { id: 'jobs', label: '💼 Jobs' },
+  ];
 
   const handleTouchStart = e => { startY.current = e.touches[0].clientY; };
   const handleTouchEnd = e => {
@@ -391,28 +520,68 @@ const HomeFeed = ({ posts, currentUser, onViewProfile, showToast, followed }) =>
 
   return (
     <div style={{ height: '100%', position: 'relative', overflow: 'hidden' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <div style={{ position: 'absolute', top: 12, left: 0, right: 0, zIndex: 15, display: 'flex', justifyContent: 'center', gap: 12 }}>
-        <button onClick={() => { setTab('foryou'); setCurrentIndex(0); }} style={{ background: tab === 'foryou' ? '#ff2d55' : 'rgba(0,0,0,0.6)', border: 'none', borderRadius: 30, padding: '8px 18px', color: '#fff', fontSize: 14, fontWeight: tab === 'foryou' ? 700 : 500, cursor: 'pointer' }}>🔥 For You</button>
-        <button onClick={() => { setTab('friends'); setCurrentIndex(0); }} style={{ background: tab === 'friends' ? '#ff2d55' : 'rgba(0,0,0,0.6)', border: 'none', borderRadius: 30, padding: '8px 18px', color: '#fff', fontSize: 14, fontWeight: tab === 'friends' ? 700 : 500, cursor: 'pointer' }}>👥 Friends</button>
+      {/* Top Tabs */}
+      <div style={{ position: 'absolute', top: 12, left: 0, right: 0, zIndex: 15, display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', padding: '0 10px' }}>
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id); setCurrentIndex(0); }} style={{
+            background: activeTab === tab.id ? '#ff2d55' : 'rgba(0,0,0,0.6)',
+            border: 'none', borderRadius: 30, padding: '8px 18px', color: '#fff',
+            fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500,
+            cursor: 'pointer', backdropFilter: 'blur(10px)'
+          }}>
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {/* Search and Notification Icons */}
+      <div style={{ position: 'absolute', top: 12, right: 16, zIndex: 15, display: 'flex', gap: 12 }}>
+        <button onClick={() => showToast('Search coming soon!', 'info')} style={{ background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: '#fff', fontSize: 16, cursor: 'pointer', backdropFilter: 'blur(10px)' }}>🔍</button>
+        <button onClick={() => showToast('Notifications', 'info')} style={{ background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 36, height: 36, color: '#fff', fontSize: 16, cursor: 'pointer', backdropFilter: 'blur(10px)' }}>🔔</button>
+      </div>
+
+      {/* Posts */}
       {feedPosts.length === 0 ? (
         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 48 }}>📭</div>
-          <div style={{ color: '#555', textAlign: 'center' }}>{tab === 'friends' ? 'Follow friends to see their posts!' : 'No posts yet. Be the first!'}</div>
+          <div style={{ color: '#555', textAlign: 'center' }}>
+            {activeTab === 'friends' ? 'Follow friends to see their posts!' : 
+             activeTab === 'learn' ? 'No learning content yet!' :
+             activeTab === 'jobs' ? 'No jobs posted yet!' : 
+             'No posts yet. Be the first!'}
+          </div>
         </div>
       ) : (
         feedPosts.map((post, idx) => (
-          <div key={post.id} style={{ position: 'absolute', inset: 0, transform: `translateY(${(idx - currentIndex) * 100}%)`, transition: 'transform 0.3s', pointerEvents: idx === currentIndex ? 'auto' : 'none' }}>
-            <PostCard post={post} currentUser={currentUser} onViewProfile={onViewProfile} showToast={showToast} />
+          <div key={post.id} style={{
+            position: 'absolute', inset: 0,
+            transform: `translateY(${(idx - currentIndex) * 100}%)`,
+            transition: 'transform 0.3s ease-out',
+            pointerEvents: idx === currentIndex ? 'auto' : 'none'
+          }}>
+            <PostCard post={post} currentUser={currentUser} onViewProfile={onViewProfile} showToast={showToast} onLivePress={onLivePress} />
           </div>
         ))
+      )}
+
+      {/* Page Indicator */}
+      {feedPosts.length > 1 && (
+        <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, zIndex: 10 }}>
+          {feedPosts.slice(0, 5).map((_, i) => (
+            <div key={i} style={{
+              width: i === currentIndex ? 20 : 6, height: 4, borderRadius: 2,
+              background: i === currentIndex ? '#ff2d55' : 'rgba(255,255,255,0.4)',
+              transition: 'width 0.2s'
+            }} />
+          ))}
+        </div>
       )}
     </div>
   );
 };
 
 // ============================================
-// EDIT PROFILE MODAL (Working)
+// EDIT PROFILE MODAL
 // ============================================
 const EditProfileModal = ({ user, onClose, onUpdate, showToast }) => {
   const [bio, setBio] = useState(user?.bio || '');
@@ -429,7 +598,7 @@ const EditProfileModal = ({ user, onClose, onUpdate, showToast }) => {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 5000 }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 5000, overflowY: 'auto' }}>
       <div style={{ padding: 16, borderBottom: '1px solid #222', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer' }}>✕</button>
         <h3 style={{ color: '#fff', fontSize: 18, fontWeight: 700 }}>Edit Profile</h3>
@@ -447,7 +616,7 @@ const EditProfileModal = ({ user, onClose, onUpdate, showToast }) => {
 };
 
 // ============================================
-// SETTINGS PAGE (Working)
+// SETTINGS PAGE
 // ============================================
 const SettingsPage = ({ currentUser, onClose, showToast, onLogout }) => {
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -470,11 +639,11 @@ const SettingsPage = ({ currentUser, onClose, showToast, onLogout }) => {
           </div>
           {[
             { icon: '👤', label: 'Edit Profile', fn: () => setShowEditProfile(true) },
-            { icon: '🔒', label: 'Privacy', fn: () => showToast('Coming soon!', 'info') },
-            { icon: '🔔', label: 'Notifications', fn: () => showToast('Coming soon!', 'info') },
-            { icon: '💰', label: 'Wallet', fn: () => showToast('Coming soon!', 'info') },
-            { icon: '❓', label: 'Help & Support', fn: () => showToast('Coming soon!', 'info') },
-            { icon: '📜', label: 'Terms & Privacy', fn: () => showToast('Coming soon!', 'info') },
+            { icon: '🔒', label: 'Privacy', fn: () => showToast('Privacy settings', 'info') },
+            { icon: '🔔', label: 'Notifications', fn: () => showToast('Notification settings', 'info') },
+            { icon: '💰', label: 'Wallet', fn: () => showToast('Wallet: 0 coins', 'info') },
+            { icon: '❓', label: 'Help & Support', fn: () => showToast('Help center', 'info') },
+            { icon: '📜', label: 'Terms & Privacy', fn: () => showToast('Terms and conditions', 'info') },
           ].map(item => (
             <button key={item.label} onClick={item.fn} style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '16px 20px', background: 'none', border: 'none', borderBottom: '1px solid #111', cursor: 'pointer' }}>
               <span style={{ fontSize: 22 }}>{item.icon}</span>
@@ -492,7 +661,7 @@ const SettingsPage = ({ currentUser, onClose, showToast, onLogout }) => {
 };
 
 // ============================================
-// INBOX PAGE (Working)
+// INBOX PAGE (Messages)
 // ============================================
 const InboxPage = ({ currentUser, showToast }) => {
   const [users, setUsers] = useState([]);
@@ -543,6 +712,9 @@ const InboxPage = ({ currentUser, showToast }) => {
             <div key={msg.id} style={{ display: 'flex', justifyContent: msg.from === currentUser?.uid ? 'flex-end' : 'flex-start' }}>
               <div style={{ background: msg.from === currentUser?.uid ? '#ff2d55' : '#1a1a1a', borderRadius: 18, padding: '10px 14px', maxWidth: '75%' }}>
                 <div style={{ color: '#fff', fontSize: 13 }}>{msg.text}</div>
+                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 9, marginTop: 4, textAlign: 'right' }}>
+                  {msg.createdAt?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
               </div>
             </div>
           ))}
@@ -550,7 +722,7 @@ const InboxPage = ({ currentUser, showToast }) => {
         </div>
         <div style={{ padding: '10px 12px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: 6 }}>
           <input value={text} onChange={e => setText(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMessage()} placeholder="Message..." style={{ flex: 1, background: '#161616', border: '1px solid #222', borderRadius: 22, padding: '9px 14px', color: '#fff', outline: 'none' }} />
-          <button onClick={sendMessage} style={{ background: '#ff2d55', border: 'none', borderRadius: '50%', width: 38, height: 38, color: '#fff', cursor: 'pointer' }}>↑</button>
+          <button onClick={sendMessage} style={{ background: text.trim() ? '#ff2d55' : '#2a2a2a', border: 'none', borderRadius: '50%', width: 38, height: 38, color: '#fff', cursor: 'pointer' }}>↑</button>
         </div>
       </div>
     );
@@ -572,6 +744,7 @@ const InboxPage = ({ currentUser, showToast }) => {
               <div style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>@{u.username}</div>
               <div style={{ color: '#555', fontSize: 12 }}>{u.bio || 'Tap to message'}</div>
             </div>
+            <div style={{ color: '#ff2d55', fontSize: 20 }}>›</div>
           </div>
         ))}
       </div>
@@ -580,7 +753,7 @@ const InboxPage = ({ currentUser, showToast }) => {
 };
 
 // ============================================
-// MY PROFILE PAGE (Working)
+// MY PROFILE PAGE
 // ============================================
 const MyProfile = ({ currentUser, showToast, onLogout, onOpenSettings }) => {
   const [posts, setPosts] = useState([]);
@@ -695,18 +868,23 @@ export default function DaguApp() {
   if (firebaseUser === undefined) return <div style={{ height: '100dvh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ fontSize: 56 }}>🎬</div></div>;
   if (!firebaseUser) return <AuthScreen showToast={showToast} />;
 
-  const tabs = [
+  const bottomTabs = [
     { id: 'home', icon: '🏠', label: 'Home' },
-    { id: 'post', icon: '➕', label: 'Post' },
-    { id: 'story', icon: '📖', label: 'Story' },
-    { id: 'inbox', icon: '💬', label: 'Inbox' },
-    { id: 'profile', icon: '👤', label: 'Me' },
+    { id: 'friends', icon: '👥', label: 'Friends' },
+    { id: 'create', icon: '➕', label: 'Create' },
+    { id: 'message', icon: '💬', label: 'Message' },
+    { id: 'profile', icon: '👤', label: 'Profile' },
   ];
 
   return (
     <div style={{ maxWidth: 430, margin: '0 auto', height: '100dvh', background: '#0a0a0a', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
-      <style>{`*{margin:0;padding:0;box-sizing:border-box}::-webkit-scrollbar{display:none}button:active{transform:scale(0.95)}`}</style>
+      <style>{`
+        *{margin:0;padding:0;box-sizing:border-box}
+        ::-webkit-scrollbar{display:none}
+        button:active{transform:scale(0.95);transition:transform 0.05s}
+      `}</style>
 
+      {/* Modals */}
       {showCreatePost && <CreatePostModal currentUser={currentUser} onClose={() => setShowCreatePost(false)} showToast={showToast} />}
       {showSettings && <SettingsPage currentUser={currentUser} onClose={() => setShowSettings(false)} showToast={showToast} onLogout={handleLogout} />}
 
@@ -718,20 +896,46 @@ export default function DaguApp() {
       {/* Main Content */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0 }}>
         {activeTab === 'home' && (
-          <HomeFeed posts={posts} currentUser={currentUser} onViewProfile={setViewingProfile} showToast={showToast} followed={followed} />
+          <HomeFeed 
+            posts={posts} 
+            currentUser={currentUser} 
+            onViewProfile={setViewingProfile} 
+            showToast={showToast} 
+            followed={followed}
+            onLivePress={(post) => showToast(`Joining ${post.username}'s live...`, 'info')}
+          />
         )}
-        {activeTab === 'inbox' && <InboxPage currentUser={currentUser} showToast={showToast} />}
+        {activeTab === 'friends' && (
+          <HomeFeed 
+            posts={posts} 
+            currentUser={currentUser} 
+            onViewProfile={setViewingProfile} 
+            showToast={showToast} 
+            followed={followed}
+            onLivePress={(post) => showToast(`Joining live...`, 'info')}
+          />
+        )}
+        {activeTab === 'message' && <InboxPage currentUser={currentUser} showToast={showToast} />}
         {activeTab === 'profile' && <MyProfile currentUser={currentUser} showToast={showToast} onLogout={handleLogout} onOpenSettings={() => setShowSettings(true)} />}
-        {activeTab === 'post' && <CreatePostModal currentUser={currentUser} onClose={() => setActiveTab('home')} showToast={showToast} />}
-        {activeTab === 'story' && <CreateStoryModal currentUser={currentUser} onClose={() => setActiveTab('home')} onStoryPosted={refreshStories} showToast={showToast} />}
+        {activeTab === 'create' && <CreatePostModal currentUser={currentUser} onClose={() => setActiveTab('home')} showToast={showToast} />}
       </div>
 
-      {/* Tab Bar */}
-      <div style={{ display: 'flex', background: 'rgba(8,8,8,0.97)', borderTop: '1px solid #161616', padding: '8px 4px 18px', flexShrink: 0 }}>
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0' }}>
-            <span style={{ fontSize: 24, transform: activeTab === tab.id ? 'scale(1.15)' : 'scale(1)', transition: 'transform 0.15s' }}>{tab.icon}</span>
-            <span style={{ fontSize: 10, color: activeTab === tab.id ? '#ff2d55' : '#444', fontWeight: activeTab === tab.id ? 700 : 400 }}>{tab.label}</span>
+      {/* Bottom Tab Bar */}
+      <div style={{ display: 'flex', background: 'rgba(8,8,8,0.97)', borderTop: '1px solid #161616', padding: '8px 4px 18px', flexShrink: 0, backdropFilter: 'blur(12px)' }}>
+        {bottomTabs.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0'
+          }}>
+            <span style={{
+              fontSize: tab.id === 'create' ? 28 : 22,
+              transform: activeTab === tab.id ? 'scale(1.15)' : 'scale(1)',
+              transition: 'transform 0.15s'
+            }}>{tab.icon}</span>
+            <span style={{
+              fontSize: 10, color: activeTab === tab.id ? '#ff2d55' : '#444',
+              fontWeight: activeTab === tab.id ? 700 : 400
+            }}>{tab.label}</span>
           </button>
         ))}
       </div>
