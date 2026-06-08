@@ -2434,7 +2434,6 @@ const AuthScreen = ({ onLogin }) => {
 
       // Check if username already taken
       const usersSnap = await getDocs(query(collection(db,'users'), where('username','==',username)));
-      );
       if(!usersSnap.empty){ setError('Username already taken'); setLoading(false); return; }
 
       // Check if email already registered (Firebase throws if duplicate)
