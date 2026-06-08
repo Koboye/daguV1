@@ -1,11 +1,7 @@
 // DaguV3.jsx — FULLY REAL: Firebase Auth + Firestore + Cloudinary + EmailJS
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import {
-  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut,
-  updateProfile, sendPasswordResetEmail
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, increment, serverTimestamp, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut,
@@ -555,8 +551,8 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
         </div>
         {!isOwn && (
           <div style={{ display:'flex', gap:8, padding:'0 16px 16px' }}>
-            style={{ flex:1, background:isFollowing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#ff2d55,#af52de)', border:isFollowing?'1px solid rgba(255,45,85,0.4)':'none', borderRadius:14, padding:'12px', color:isFollowing?'#ff2d55':'white', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:"'Syne',sans-serif" }}>
-              {isFollowing ? 'Unfollow' : '+ Follow'}
+            <button onClick={()=>{onFollow?.(user.id); onClose();}}
+              style={{ flex:1, background:isFollowing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#ff2d55,#af52de)', border:isFollowing?'1px solid rgba(255,45,85,0.4)':'none', borderRadius:14, padding:'12px', color:isFollowing?'#ff2d55':'white', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:"'Syne',sans-serif" }}>
               {isFollowing ? 'Following' : '+ Follow'}
             </button>
             <button onClick={()=>{onMessage?.(user.id); onClose();}} style={{ flex:1, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:14, padding:'12px', color:'white', fontWeight:600, cursor:'pointer', fontSize:14 }}>Message</button>
@@ -651,7 +647,9 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
       videoRef.current.pause?.();
       setIsPlaying(false);
     }
-  },[isActive]);
+  },[streamer]);
+
+  useEffect(()=>{
     const q = query(collection(db,'liveMessages'), where('liveId','==',liveRef.current||''), orderBy('createdAt','asc'));
     const unsub = onSnapshot(q, snap=>{
       const msgs = snap.docs.map(d=>({id:d.id,...d.data()}));
