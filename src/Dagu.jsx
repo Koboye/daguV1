@@ -1,7 +1,7 @@
 // DaguV3.jsx — FULLY REAL: Firebase Auth + Firestore + Cloudinary + EmailJS
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, increment, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, increment, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail, sendEmailVerification } from 'firebase/auth';
 
 /* ─────────────── FIREBASE CONFIG ─────────────── */
@@ -1029,7 +1029,9 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
       {showComments && (
   <div
     onClick={e => e.stopPropagation()}
-      style={{ position:'absolute', inset:0, background:'#0a0a0a', zIndex:200, display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease' }}>
+    onTouchStart={e => e.stopPropagation()}
+    onTouchEnd={e => e.stopPropagation()}
+    style={{ position:'fixed', inset:0, background:'#0a0a0a', zIndex:500, display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease' }}>
           <div style={{ padding:'16px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ color:'white', fontWeight:700, fontSize:16, fontFamily:"'Syne',sans-serif" }}>Comments</span>
             <button onClick={()=>setShowComments(false)} style={{ background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:32, height:32, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
@@ -2409,29 +2411,52 @@ const AuthScreen = ({ onLogin }) => {
   };
 
   const handleSubmit = async () => {
-    setLoading(true); setError('');
-    try {
-      if(isLogin){
-        const result = await signInWithEmailAndPassword(auth, identifier, password);
-        let profile = await getUserProfile(result.user.uid);
-        if(!profile){
-          await createUserProfile(result.user.uid,{email:identifier,username:identifier.split('@')[0]});
-          profile = await getUserProfile(result.user.uid);
-        }
-        onLogin({...profile,id:result.user.uid});
-      } else {
-        if(!username){setError('Username required'); setLoading(false); return;}
-        const result = await createUserWithEmailAndPassword(auth, identifier, password);
-        await createUserProfile(result.user.uid,{username,fullName,email:identifier});
-        await sendEmailVerification(result.user);
+  setLoading(true); setError('');
+  try {
+    if(isLogin){
+      const result = await signInWithEmailAndPassword(auth, identifier, password);
+      // Block login if email not verified
+      if(!result.user.emailVerified){
         await signOut(auth);
-        setStep('verify');
+        setError('Please verify your email first. Check your inbox.');
         setLoading(false);
         return;
       }
-    } catch(e){ setError(e.message.replace('Firebase: ','').replace(/\(auth.*\)/,'')); }
-    setLoading(false);
-  };
+      let profile = await getUserProfile(result.user.uid);
+      if(!profile){
+        await createUserProfile(result.user.uid,{email:identifier, username:identifier.split('@')[0]});
+        profile = await getUserProfile(result.user.uid);
+      }
+      onLogin({...profile, id:result.user.uid});
+    } else {
+      if(!username){ setError('Username required'); setLoading(false); return; }
+      if(!fullName){ setError('Full name required'); setLoading(false); return; }
+
+      // Check if username already taken
+      const usersSnap = await getDocs(query(collection(db,'users'), where('username','==',username)));
+      );
+      if(!usersSnap.empty){ setError('Username already taken'); setLoading(false); return; }
+
+      // Check if email already registered (Firebase throws if duplicate)
+      const result = await createUserWithEmailAndPassword(auth, identifier, password);
+      await createUserProfile(result.user.uid,{username, fullName, email:identifier});
+      await sendEmailVerification(result.user);
+      await signOut(auth);
+      setStep('verify');
+      setLoading(false);
+      return;
+    }
+  } catch(e){
+    const msg = e.message.replace('Firebase: ','').replace(/\(auth.*\)/,'');
+    // Make duplicate email error user-friendly
+    if(e.code === 'auth/email-already-in-use'){
+      setError('This email is already registered. Please sign in instead.');
+    } else {
+      setError(msg);
+    }
+  }
+  setLoading(false);
+};
 
   const handleMethodSelect = m => {
     if(m.id==='google'){ handleGoogleLogin(); return; }
@@ -2684,7 +2709,9 @@ export default function DaguV3App() {
 
   const handleViewProfile = uid => { const user=users.find(u=>u.id===uid); if(user) setViewingProfile(user); };
   const [inboxTargetId, setInboxTargetId] = useState(null);
-const [activeConversation, setActiveConversation] = useState(null);
+const [activeConversation, setActiveConversation] = useState(()=>{
+  try { return JSON.parse(sessionStorage.getItem('dagu_conv')||'null'); } catch { return null; }
+});
 const handleMessage = uid => { 
   setInboxTargetId(uid); 
   setActiveTab('inbox'); 
@@ -2771,7 +2798,7 @@ const handleMessage = uid => {
             {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} />}
             {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
-            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={setActiveConversation} />}
+            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={(conv)=>{ setActiveConversation(conv); sessionStorage.setItem('dagu_conv', JSON.stringify(conv)); }} />}
             {activeTab==='profile' && <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} users={users} showToast={showToast} onShowAnalytics={()=>setShowAnalytics(true)} onShowQRCode={()=>setShowQRCode(true)} allVideos={videos} />}
           </>
         )}
