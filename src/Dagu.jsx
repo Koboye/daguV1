@@ -996,8 +996,8 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
 
       {showComments && (
   <div
-    onClick={e => e.stopPropagation()}   // ← ADD THIS
-    style={{ position:'absolute', inset:0, background:'#0a0a0a', zIndex:200,   // ← 50 → 200
+    onClick={e => e.stopPropagation()}
+      style={{ position:'absolute', inset:0, background:'#0a0a0a', zIndex:200, display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease' }}>
           <div style={{ padding:'16px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ color:'white', fontWeight:700, fontSize:16, fontFamily:"'Syne',sans-serif" }}>Comments</span>
             <button onClick={()=>setShowComments(false)} style={{ background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:32, height:32, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
