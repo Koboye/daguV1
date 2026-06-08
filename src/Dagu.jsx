@@ -696,14 +696,14 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
 };
 
 /* ─────────────── COMMENT ITEM ─────────────── */
-const CommentItem = ({ comment, currentUser, onLike, onReply, onPin }) => (
+const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, onViewProfile }) => (
   <div style={{ display:'flex', gap:10, marginBottom:14 }}>
-    <div style={{ width:34, height:34, borderRadius:'50%', background:comment.avatarColor||'#333', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:13, flexShrink:0, overflow:'hidden' }}>
+    <div onClick={()=>onViewProfile?.(comment.userId)} style={{ width:34, height:34, borderRadius:'50%', background:comment.avatarColor||'#333', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:13, flexShrink:0, overflow:'hidden', cursor:'pointer' }}>
       {comment.avatarUrl ? <img src={comment.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : (comment.avatar||'U')}
     </div>
     <div style={{ flex:1 }}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
-        <span style={{ color:'white', fontWeight:700, fontSize:13 }}>{comment.username}</span>
+        <span onClick={()=>onViewProfile?.(comment.userId)} style={{ color:'white', fontWeight:700, fontSize:13, cursor:'pointer' }}>{comment.username}</span>
         <span style={{ color:'rgba(255,255,255,0.3)', fontSize:11 }}>{comment.time||'1m'}</span>
       </div>
       <div style={{ color:'rgba(255,255,255,0.85)', fontSize:13, lineHeight:1.4 }}>{comment.text}</div>
@@ -718,7 +718,71 @@ const CommentItem = ({ comment, currentUser, onLike, onReply, onPin }) => (
     </div>
   </div>
 );
+const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, showToast, videoId }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const fileInputRef = useRef(null);
 
+  const startVoice = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      chunksRef.current = [];
+      const rec = new MediaRecorder(stream);
+      rec.ondataavailable = e => chunksRef.current.push(e.data);
+      rec.onstop = () => { setAudioBlob(new Blob(chunksRef.current,{type:'audio/webm'})); stream.getTracks().forEach(t=>t.stop()); };
+      rec.start(); recorderRef.current = rec; setIsRecording(true); setRecordSecs(0);
+      timerRef.current = setInterval(()=>setRecordSecs(s=>s+1),1000);
+    } catch { showToast?.('Mic access denied','error'); }
+  };
+  const stopVoice = () => { recorderRef.current?.stop(); setIsRecording(false); clearInterval(timerRef.current); };
+  const pickFile = e => { const f=e.target.files[0]; if(f){setPreviewFile({url:URL.createObjectURL(f),file:f,type:f.type}); e.target.value='';} };
+  const clearAttach = () => { setAudioBlob(null); setPreviewFile(null); };
+  const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+
+  const handleSend = async () => {
+    let mediaUrl=null, mediaType=null;
+    if(previewFile?.file){ try{ mediaUrl=await uploadToCloudinary(previewFile.file); mediaType=previewFile.type; }catch{ showToast?.('Upload failed','error'); return; } }
+    else if(audioBlob){ try{ mediaUrl=await uploadToCloudinary(audioBlob); mediaType='audio/webm'; }catch{ showToast?.('Upload failed','error'); return; } }
+    if(!commentText.trim()&&!mediaUrl) return;
+    await addDoc(collection(db,'comments'),{ videoId, userId:currentUser.id, username:currentUser.username, avatar:currentUser.avatar||(currentUser.username||'U')[0].toUpperCase(), avatarColor:currentUser.avatarColor||'#ff2d55', avatarUrl:currentUser.avatarUrl||null, text:commentText, mediaUrl, mediaType, likes:0, createdAt:serverTimestamp() });
+    await updateDoc(doc(db,'videos',videoId),{comments:increment(1)});
+    setCommentText(''); clearAttach();
+  };
+
+  return (
+    <div style={{padding:'10px 14px 24px',borderTop:'1px solid rgba(255,255,255,0.06)',background:'#0a0a0a'}}>
+      {(previewFile||audioBlob)&&(
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,background:'rgba(255,255,255,0.05)',borderRadius:14,padding:'8px 12px'}}>
+          {previewFile?.type?.startsWith('image')&&<img src={previewFile.url} alt="" style={{height:44,width:44,objectFit:'cover',borderRadius:8}}/>}
+          {previewFile?.type?.startsWith('video')&&<video src={previewFile.url} style={{height:44,width:60,objectFit:'cover',borderRadius:8}}/>}
+          {audioBlob&&!previewFile&&<audio src={URL.createObjectURL(audioBlob)} controls style={{height:28,flex:1}}/>}
+          <button onClick={clearAttach} style={{marginLeft:'auto',background:'rgba(255,45,85,0.2)',border:'none',borderRadius:'50%',width:22,height:22,color:'#ff2d55',cursor:'pointer',fontSize:13}}>✕</button>
+        </div>
+      )}
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <div style={{width:34,height:34,borderRadius:'50%',background:currentUser?.avatarColor,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:'bold',fontSize:14,flexShrink:0,overflow:'hidden'}}>
+          {currentUser?.avatarUrl?<img src={currentUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>:currentUser?.avatar}
+        </div>
+        <input value={commentText} onChange={e=>setCommentText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Add a comment...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'10px 14px',color:'white',outline:'none',fontSize:13}}/>
+        <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={pickFile} style={{display:'none'}}/>
+        <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 10px rgba(255,45,85,0.6)':'none'}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <button onClick={handleSend} style={{background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:'50%',width:36,height:36,color:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+};
 /* ─────────────── ENHANCED VIDEO CARD ─────────────── */
 const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile }) => {
   const [liked, setLiked] = useState(false);
@@ -906,18 +970,13 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
               </div>
             )}
             {comments.map(comment=>(
-              <CommentItem key={comment.id} comment={comment} currentUser={currentUser} onLike={async id=>{await updateDoc(doc(db,'comments',id),{likes:increment(1)});}} onReply={(c)=>setCommentText(`@${c.username} `)} onPin={id=>{const c=comments.find(cc=>cc.id===id); if(c){setPinnedComment(c); showToast?.('Pinned!','success');}}} />
+              {comments.length===0 && <div style={{textAlign:'center',padding:40,color:'rgba(255,255,255,0.3)',fontSize:13}}>No comments yet. Be the first! 💬</div>}
+            {comments.map(comment=>(
+              <CommentItem key={comment.id} comment={comment} currentUser={currentUser} onLike={async id=>{await updateDoc(doc(db,'comments',id),{likes:increment(1)});}} onReply={(c)=>setCommentText(`@${c.username} `)} onPin={id=>{const c=comments.find(cc=>cc.id===id); if(c){setPinnedComment(c); showToast?.('Pinned!','success');}}} onViewProfile={onViewProfile} />
+            ))}
             ))}
           </div>
-          <div style={{ padding:'10px 14px 24px', borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', gap:10, alignItems:'center' }}>
-            <div style={{ width:34, height:34, borderRadius:'50%', background:currentUser?.avatarColor, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:14, flexShrink:0, overflow:'hidden' }}>
-              {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : currentUser?.avatar}
-            </div>
-            <input value={commentText} onChange={e=>setCommentText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addComment()} placeholder="Add a comment..." style={{ flex:1, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:28, padding:'10px 16px', color:'white', outline:'none', fontSize:13 }} />
-            <button onClick={addComment} style={{ background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:'50%', width:38, height:38, color:'white', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
-          </div>
+          <CommentInputBar currentUser={currentUser} commentText={commentText} setCommentText={setCommentText} onSend={addComment} showToast={showToast} videoId={video.id} />
         </div>
       )}
       {showShare && <ShareModal video={video} onClose={()=>setShowShare(false)} showToast={showToast} />}
@@ -1513,10 +1572,136 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
 };
 
 /* ─────────────── INBOX (REAL-TIME FIRESTORE) ─────────────── */
-const ConversationView = ({ currentUser, otherUser, conversationId, onBack, showToast }) => {
+const ConversationView = ({ currentUser, otherUser, conversationId, onBack, showToast, onViewProfile }) => {
   const [text, setText] = useState('');
   const [messages, setMessages] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [previewFile, setPreviewFile] = useState(null);
   const bottomRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(()=>{
+    if(!conversationId) return;
+    const q = query(collection(db,'messages',conversationId,'msgs'), orderBy('createdAt','asc'));
+    const unsub = onSnapshot(q, snap=>{
+      setMessages(snap.docs.map(d=>({id:d.id,...d.data()})));
+      setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
+    });
+    return ()=>unsub();
+  },[conversationId]);
+
+  const startVoice = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      chunksRef.current = [];
+      const rec = new MediaRecorder(stream);
+      rec.ondataavailable = e => chunksRef.current.push(e.data);
+      rec.onstop = () => { setAudioBlob(new Blob(chunksRef.current,{type:'audio/webm'})); stream.getTracks().forEach(t=>t.stop()); };
+      rec.start(); recorderRef.current=rec; setIsRecording(true); setRecordSecs(0);
+      timerRef.current = setInterval(()=>setRecordSecs(s=>s+1),1000);
+    } catch { showToast?.('Mic access denied','error'); }
+  };
+  const stopVoice = () => { recorderRef.current?.stop(); setIsRecording(false); clearInterval(timerRef.current); };
+  const pickFile = e => { const f=e.target.files[0]; if(f){setPreviewFile({url:URL.createObjectURL(f),file:f,type:f.type}); e.target.value='';} };
+  const clearAttach = () => { setAudioBlob(null); setPreviewFile(null); };
+  const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+
+  const handleSend = async () => {
+    if(!conversationId) return;
+    let mediaUrl=null, mediaType=null;
+    if(previewFile?.file){ try{ mediaUrl=await uploadToCloudinary(previewFile.file); mediaType=previewFile.type; }catch{ showToast?.('Upload failed','error'); return; } }
+    else if(audioBlob){ try{ mediaUrl=await uploadToCloudinary(audioBlob); mediaType='audio/webm'; }catch{ showToast?.('Upload failed','error'); return; } }
+    if(!text.trim()&&!mediaUrl) return;
+    const msg=text; setText('');
+    await addDoc(collection(db,'messages',conversationId,'msgs'),{ from:currentUser.id, to:otherUser.id, text:msg, mediaUrl, mediaType, createdAt:serverTimestamp() });
+    await setDoc(doc(db,'conversations',conversationId),{ participants:[currentUser.id,otherUser.id], lastMessage:mediaUrl?(mediaType?.startsWith('audio')?'🎙️ Voice message':'📎 Attachment'):msg, lastMessageAt:serverTimestamp(), [`unread_${otherUser.id}`]:increment(1) },{merge:true});
+    clearAttach();
+  };
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',background:'#0a0a0a'}}>
+      <div style={{padding:'14px 16px',borderBottom:'1px solid rgba(255,255,255,0.06)',display:'flex',alignItems:'center',gap:12}}>
+        <button onClick={onBack} style={{background:'none',border:'none',color:'white',cursor:'pointer',padding:'4px 0'}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div onClick={()=>onViewProfile?.(otherUser?.id)} style={{width:40,height:40,borderRadius:'50%',background:otherUser?.avatarColor,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:'bold',overflow:'hidden',cursor:'pointer'}}>
+          {otherUser?.avatarUrl?<img src={otherUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>:otherUser?.avatar}
+        </div>
+        <div onClick={()=>onViewProfile?.(otherUser?.id)} style={{cursor:'pointer'}}>
+          <div style={{color:'white',fontWeight:700,fontFamily:"'Syne',sans-serif"}}>@{otherUser?.username}</div>
+          <div style={{color:'#06d6a0',fontSize:11,display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:'#06d6a0'}}/>Online</div>
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',gap:10}}>
+          <button style={{background:'rgba(255,255,255,0.06)',border:'none',borderRadius:'50%',width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-5.99-5.99 19.79 19.79 0 01-3.07-8.67A2 2 0 014 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+          </button>
+          <button style={{background:'rgba(255,255,255,0.06)',border:'none',borderRadius:'50%',width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:'auto',padding:'16px'}}>
+        {messages.length===0&&<div style={{textAlign:'center',padding:40,color:'rgba(255,255,255,0.2)'}}>Start a conversation! 👋</div>}
+        {messages.map(msg=>{
+          const isMine = msg.from===currentUser?.id;
+          return (
+            <div key={msg.id} style={{display:'flex',justifyContent:isMine?'flex-end':'flex-start',alignItems:'flex-end',gap:8,marginBottom:10}}>
+              {!isMine&&(
+                <div onClick={()=>onViewProfile?.(otherUser?.id)} style={{width:26,height:26,borderRadius:'50%',background:otherUser?.avatarColor,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:'bold',fontSize:10,flexShrink:0,cursor:'pointer',overflow:'hidden'}}>
+                  {otherUser?.avatarUrl?<img src={otherUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>:otherUser?.avatar}
+                </div>
+              )}
+              <div style={{maxWidth:'72%'}}>
+                {msg.text&&<div style={{background:isMine?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.07)',borderRadius:isMine?'20px 20px 4px 20px':'20px 20px 20px 4px',padding:'10px 14px',marginBottom:msg.mediaUrl?4:0}}>
+                  <span style={{color:'white',fontSize:14}}>{msg.text}</span>
+                </div>}
+                {msg.mediaUrl&&msg.mediaType?.startsWith('image')&&<img src={msg.mediaUrl} alt="" style={{maxWidth:'100%',borderRadius:14,display:'block'}}/>}
+                {msg.mediaUrl&&msg.mediaType?.startsWith('video')&&<video src={msg.mediaUrl} controls style={{maxWidth:'100%',borderRadius:14,display:'block'}}/>}
+                {msg.mediaUrl&&msg.mediaType?.startsWith('audio')&&(
+                  <div style={{display:'flex',alignItems:'center',gap:8,background:isMine?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.07)',borderRadius:20,padding:'10px 14px'}}>
+                    <span>🎙️</span><audio src={msg.mediaUrl} controls style={{flex:1,height:28}}/>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef}/>
+      </div>
+
+      {(previewFile||audioBlob)&&(
+        <div style={{padding:'0 14px 6px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,background:'rgba(255,255,255,0.05)',borderRadius:14,padding:'8px 12px'}}>
+            {previewFile?.type?.startsWith('image')&&<img src={previewFile.url} alt="" style={{height:44,width:44,objectFit:'cover',borderRadius:8}}/>}
+            {previewFile?.type?.startsWith('video')&&<video src={previewFile.url} style={{height:44,width:60,objectFit:'cover',borderRadius:8}}/>}
+            {audioBlob&&!previewFile&&<audio src={URL.createObjectURL(audioBlob)} controls style={{height:28,flex:1}}/>}
+            <button onClick={clearAttach} style={{marginLeft:'auto',background:'rgba(255,45,85,0.2)',border:'none',borderRadius:'50%',width:22,height:22,color:'#ff2d55',cursor:'pointer',fontSize:13}}>✕</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{padding:'10px 14px 28px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center'}}>
+        <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={pickFile} style={{display:'none'}}/>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
+        <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 12px rgba(255,45,85,0.6)':'none'}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <button onClick={handleSend} style={{background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:'50%',width:42,height:42,color:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+};
 
   useEffect(()=>{
     if(!conversationId) return;
@@ -1588,7 +1773,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   );
 };
 
-const InboxPage = ({ users, currentUser, showToast }) => {
+const InboxPage = ({ users, currentUser, showToast, onViewProfile }) => {
   const [activeConversation, setActiveConversation] = useState(null);
   const [conversations, setConversations] = useState([]);
 
@@ -1615,7 +1800,7 @@ const InboxPage = ({ users, currentUser, showToast }) => {
 
   if(activeConversation){
     const otherUser = users.find(u=>u.id===activeConversation.otherUserId);
-    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>setActiveConversation(null)} showToast={showToast} />;
+    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>setActiveConversation(null)} showToast={showToast} onViewProfile={uid=>{setActiveConversation(null); onViewProfile?.(uid);}} />;
   }
 
   const convUsers = users.filter(u=>u.id!==currentUser?.id);
@@ -2386,7 +2571,7 @@ export default function DaguV3App() {
             {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} />}
             {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
-            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} />}
+            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} />}
             {activeTab==='profile' && <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} users={users} showToast={showToast} onShowAnalytics={()=>setShowAnalytics(true)} onShowQRCode={()=>setShowQRCode(true)} allVideos={videos} />}
           </>
         )}
