@@ -714,7 +714,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
       videoId: video.id,
       userId: currentUser.id,
       username: currentUser.username,
-      avatar: currentUser.avatar,
+     avatar: currentUser.avatar || (currentUser.username || 'U')[0].toUpperCase(),
       avatarColor: currentUser.avatarColor,
       avatarUrl: currentUser.avatarUrl||null,
       text: txt,
