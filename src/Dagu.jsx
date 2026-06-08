@@ -720,8 +720,19 @@ const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, onViewProfi
 );
 const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, showToast, videoId }) => {
   const [isRecording, setIsRecording] = useState(false);
+const [showEmoji, setShowEmoji] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
+  {showEmoji && (
+  <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'10px 12px',background:'rgba(255,255,255,0.04)',borderRadius:16,marginBottom:8}}>
+    {EMOJI_LIST.map(e=>(
+      <button key={e} onClick={()=>setCommentText(t=>t+e)}
+        style={{background:'none',border:'none',fontSize:22,cursor:'pointer',padding:2}}>
+        {e}
+      </button>
+    ))}
+  </div>
+)}
   const [previewFile, setPreviewFile] = useState(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -764,8 +775,15 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
           <button onClick={clearAttach} style={{marginLeft:'auto',background:'rgba(255,45,85,0.2)',border:'none',borderRadius:'50%',width:22,height:22,color:'#ff2d55',cursor:'pointer',fontSize:13}}>✕</button>
         </div>
       )}
+      {showEmoji && (
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'10px 12px',background:'rgba(255,255,255,0.04)',borderRadius:16,marginBottom:8}}>
+          {EMOJI_LIST.map(e=>(
+            <button key={e} onClick={()=>setCommentText(t=>t+e)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',padding:2}}>{e}</button>
+          ))}
+        </div>
+      )}
       <div style={{display:'flex',gap:8,alignItems:'center'}}>
-        <div style={{width:34,height:34,borderRadius:'50%',background:currentUser?.avatarColor,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:'bold',fontSize:14,flexShrink:0,overflow:'hidden'}}>
+        <div style={{width:34,height:34,borderRadius:'50%'const [showEmoji, setShowEmoji] = useState(false);,background:currentUser?.avatarColor,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:'bold',fontSize:14,flexShrink:0,overflow:'hidden'}}>
           {currentUser?.avatarUrl?<img src={currentUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>:currentUser?.avatar}
         </div>
         <input value={commentText} onChange={e=>setCommentText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Add a comment...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'10px 14px',color:'white',outline:'none',fontSize:13}}/>
@@ -776,8 +794,8 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
         <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 10px rgba(255,45,85,0.6)':'none'}}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
-        <button onClick={handleSend} style={{background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:'50%',width:36,height:36,color:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <button onClick={()=>setShowEmoji(v=>!v)} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:18}}>😊</button>
+        <button onClick={handleSend} style={{background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:'50%',width:36,height:36,color:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
     </div>
@@ -795,6 +813,9 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [heartAnim, setHeartAnim] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const tapTimer = useRef(null);
   const videoRef = useRef(null);
 
   // Load real likes state + comments from Firestore
@@ -834,6 +855,22 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
     }
   };
 
+  const handleTap = (e) => {
+    if(tapTimer.current){
+      clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      handleDoubleTap();
+    } else {
+      tapTimer.current = setTimeout(()=>{
+        tapTimer.current = null;
+        if(videoRef.current){
+          if(isPlaying){ videoRef.current.pause(); setIsPlaying(false); }
+          else { videoRef.current.play(); setIsPlaying(true); }
+        }
+      }, 280);
+    }
+  };
+
   const handleLike = async () => {
     if(!liked){
       setLiked(true);
@@ -869,10 +906,11 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
   const reportReasons = ['Spam','Inappropriate content','Hate speech','Misinformation','Copyright violation','Other'];
 
   return (
-    <div style={{ position:'absolute', inset:0, background:'#000' }} onDoubleClick={handleDoubleTap}>
-      {video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image') ?
+<div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.1) 40%,rgba(0,0,0,0.3) 100%)' }} />
+      <button onClick={e=>{e.stopPropagation();setMuted(m=>!m);}} style={{position:'absolute',top:56,right:14,zIndex:10,background:'rgba(0,0,0,0.5)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:18}}>{muted?'🔇':'🔊'}</button>
+      {!isPlaying&&<div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}      {video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image') ?
   <img src={video.videoUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> :
-  <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted autoPlay playsInline />
+  <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted={muted} autoPlay playsInline />
 }
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.1) 40%,rgba(0,0,0,0.3) 100%)' }} />
       {heartAnim && (
@@ -957,7 +995,9 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
       </div>
 
       {showComments && (
-        <div style={{ position:'absolute', inset:0, background:'#0a0a0a', zIndex:50, display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease' }}>
+  <div
+    onClick={e => e.stopPropagation()}   // ← ADD THIS
+    style={{ position:'absolute', inset:0, background:'#0a0a0a', zIndex:200,   // ← 50 → 200
           <div style={{ padding:'16px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ color:'white', fontWeight:700, fontSize:16, fontFamily:"'Syne',sans-serif" }}>Comments</span>
             <button onClick={()=>setShowComments(false)} style={{ background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:32, height:32, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
@@ -1645,6 +1685,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const [text, setText] = useState('');
   const [messages, setMessages] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
@@ -1755,8 +1796,14 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
         </div>
       )}
 
-      <div style={{padding:'10px 14px 28px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center'}}>
-        <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
+{showEmoji && (
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'10px 14px',background:'rgba(255,255,255,0.04)',borderRadius:16,margin:'0 14px 4px'}}>
+          {EMOJI_LIST.map(e=>(
+            <button key={e} onClick={()=>setText(t=>t+e)} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',padding:2}}>{e}</button>
+          ))}
+        </div>
+      )}
+      <div style={{padding:'10px 14px 28px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center'}}>        <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={pickFile} style={{display:'none'}}/>
@@ -1764,8 +1811,8 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
         <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 12px rgba(255,45,85,0.6)':'none'}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
-        <button onClick={handleSend} style={{background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:'50%',width:42,height:42,color:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        <button onClick={()=>setShowEmoji(v=>!v)} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:18}}>😊</button>
+        <button onClick={handleSend} style={{background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:'50%',width:42,height:42,color:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
     </div>
@@ -1802,7 +1849,11 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile }) => {
     return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>setActiveConversation(null)} showToast={showToast} onViewProfile={uid=>{setActiveConversation(null); onViewProfile?.(uid);}} />;
   }
 
-  const convUsers = users.filter(u=>u.id!==currentUser?.id);
+  const convUsers = users.filter(u=>{
+    if(u.id===currentUser?.id) return false;
+    const convId = getConversationId(currentUser.id, u.id);
+    return conversations.some(c=>c.id===convId);
+  });
 
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#0a0a0a' }}>
@@ -1810,7 +1861,7 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile }) => {
         <div style={{ color:'white', fontWeight:800, fontSize:22, fontFamily:"'Syne',sans-serif" }}>Messages</div>
       </div>
       <div style={{ flex:1, overflowY:'auto' }}>
-        {convUsers.length===0 && <div style={{textAlign:'center',padding:60,color:'rgba(255,255,255,0.2)'}}>No users yet</div>}
+        {convUsers.length===0 && <div style={{textAlign:'center',padding:60,color:'rgba(255,255,255,0.2)'}}><div style={{fontSize:44,marginBottom:12}}>💬</div><div style={{fontSize:14}}>No messages yet</div><div style={{fontSize:12,marginTop:6,color:'rgba(255,255,255,0.12)'}}>Go to a profile and tap Message to start</div></div>}
         {convUsers.map(u=>{
           const convId = getConversationId(currentUser.id, u.id);
           const conv = conversations.find(c=>c.id===convId);
@@ -2325,10 +2376,11 @@ const AuthScreen = ({ onLogin }) => {
         if(!username){setError('Username required'); setLoading(false); return;}
         const result = await createUserWithEmailAndPassword(auth, identifier, password);
         await createUserProfile(result.user.uid,{username,fullName,email:identifier});
-        // Send welcome email
-        await sendEmailJS({to_email:identifier,from_name:'Dagu Team',message:`Welcome to Dagu, @${username}! 🎬 Start sharing amazing content.`});
-        const profile = await getUserProfile(result.user.uid);
-        onLogin({...profile,id:result.user.uid});
+        await sendEmailVerification(result.user);
+        await signOut(auth);
+        setStep('verify');
+        setLoading(false);
+        return;
       }
     } catch(e){ setError(e.message.replace('Firebase: ','').replace(/\(auth.*\)/,'')); }
     setLoading(false);
@@ -2365,6 +2417,17 @@ const AuthScreen = ({ onLogin }) => {
         </div>
       </div>
       <div style={{ padding:'0 24px 40px', textAlign:'center', color:'rgba(255,255,255,0.2)', fontSize:11 }}>By continuing, you agree to our Terms of Service & Privacy Policy</div>
+    </div>
+  );
+
+  if(step==='verify') return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'#0a0a0a'}}>
+      <div style={{textAlign:'center',maxWidth:300}}>
+        <div style={{fontSize:64,marginBottom:16}}>📧</div>
+        <div style={{color:'white',fontWeight:800,fontSize:22,marginBottom:10,fontFamily:"'Syne',sans-serif"}}>Verify your email</div>
+        <div style={{color:'rgba(255,255,255,0.5)',fontSize:14,lineHeight:1.6,marginBottom:28}}>We sent a link to <strong style={{color:'white'}}>{identifier}</strong>. Click it then come back to sign in.</div>
+        <button onClick={()=>{setStep('method');setIsLogin(true);}} style={{width:'100%',background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:24,padding:15,color:'white',fontWeight:700,cursor:'pointer',fontSize:15,fontFamily:"'Syne',sans-serif"}}>Go to Sign In →</button>
+      </div>
     </div>
   );
 
