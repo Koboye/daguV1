@@ -1761,8 +1761,8 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
         ))}
         <div ref={bottomRef} />
       </div>
-      const InboxPage
-
+    </div>
+  );
 };
 
 const InboxPage = ({ users, currentUser, showToast, onViewProfile }) => {
