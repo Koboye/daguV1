@@ -1,12 +1,8 @@
 // DaguV3.jsx — FULLY REAL: Firebase Auth + Firestore + Cloudinary + EmailJS
 import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
-import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, increment, serverTimestamp, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-
-import {
-  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut,
-  updateProfile, sendPasswordResetEmail, sendEmailVerification
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot, increment, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, updateProfile, sendPasswordResetEmail, sendEmailVerification } from 'firebase/auth';
 
 /* ─────────────── FIREBASE CONFIG ─────────────── */
 const firebaseConfig = {
