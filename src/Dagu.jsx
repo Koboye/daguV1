@@ -718,25 +718,11 @@ const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, onViewProfi
     </div>
   </div>
 );
-/* ─────────────── EMOJI PICKER ─────────────── */
-const EmojiPicker = ({ onSelect, onClose }) => (
-  <div style={{position:'absolute',bottom:'100%',left:0,right:0,background:'rgba(18,18,18,0.98)',backdropFilter:'blur(20px)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:20,padding:12,zIndex:200,marginBottom:6,animation:'popIn 0.15s ease'}}>
-    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-      {EMOJI_LIST.map(e=>(
-        <button key={e} onClick={()=>{onSelect(e);onClose();}} style={{background:'none',border:'none',fontSize:24,cursor:'pointer',padding:'4px',borderRadius:8,lineHeight:1}}>
-          {e}
-        </button>
-      ))}
-    </div>
-  </div>
-);
-
 const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, showToast, videoId }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
-  const [showEmoji, setShowEmoji] = useState(false);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
@@ -763,16 +749,13 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
     if(previewFile?.file){ try{ mediaUrl=await uploadToCloudinary(previewFile.file); mediaType=previewFile.type; }catch{ showToast?.('Upload failed','error'); return; } }
     else if(audioBlob){ try{ mediaUrl=await uploadToCloudinary(audioBlob); mediaType='audio/webm'; }catch{ showToast?.('Upload failed','error'); return; } }
     if(!commentText.trim()&&!mediaUrl) return;
-    // Write directly to Firestore (fixes comments not appearing)
     await addDoc(collection(db,'comments'),{ videoId, userId:currentUser.id, username:currentUser.username, avatar:currentUser.avatar||(currentUser.username||'U')[0].toUpperCase(), avatarColor:currentUser.avatarColor||'#ff2d55', avatarUrl:currentUser.avatarUrl||null, text:commentText, mediaUrl, mediaType, likes:0, createdAt:serverTimestamp() });
     await updateDoc(doc(db,'videos',videoId),{comments:increment(1)});
-    setCommentText(''); clearAttach(); setShowEmoji(false);
-    onSend?.();
+    setCommentText(''); clearAttach();
   };
 
   return (
-    <div style={{padding:'10px 14px 24px',borderTop:'1px solid rgba(255,255,255,0.06)',background:'#0a0a0a',position:'relative'}}>
-      {showEmoji && <EmojiPicker onSelect={e=>setCommentText(t=>t+e)} onClose={()=>setShowEmoji(false)} />}
+    <div style={{padding:'10px 14px 24px',borderTop:'1px solid rgba(255,255,255,0.06)',background:'#0a0a0a'}}>
       {(previewFile||audioBlob)&&(
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,background:'rgba(255,255,255,0.05)',borderRadius:14,padding:'8px 12px'}}>
           {previewFile?.type?.startsWith('image')&&<img src={previewFile.url} alt="" style={{height:44,width:44,objectFit:'cover',borderRadius:8}}/>}
@@ -785,10 +768,7 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
         <div style={{width:34,height:34,borderRadius:'50%',background:currentUser?.avatarColor,display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:'bold',fontSize:14,flexShrink:0,overflow:'hidden'}}>
           {currentUser?.avatarUrl?<img src={currentUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>:currentUser?.avatar}
         </div>
-        <div style={{flex:1,position:'relative',display:'flex',alignItems:'center',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28}}>
-          <input value={commentText} onChange={e=>setCommentText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Add a comment...'} style={{flex:1,background:'none',border:'none',padding:'10px 14px',color:'white',outline:'none',fontSize:13}}/>
-          <button onClick={()=>setShowEmoji(v=>!v)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',padding:'0 10px',opacity:0.7,flexShrink:0}}>😊</button>
-        </div>
+        <input value={commentText} onChange={e=>setCommentText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Add a comment...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'10px 14px',color:'white',outline:'none',fontSize:13}}/>
         <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:34,height:34,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
@@ -1054,50 +1034,121 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
 };
 
 /* ─────────────── FRIENDS FEED ─────────────── */
-const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast, users, onCreateStory, onViewStory }) => {
+const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast, users, onCreateStory, onViewStory, onFollow, followed }) => {
   const [search, setSearch] = useState('');
-  const friendsVideos = useMemo(()=>videos.filter(v=>friends.includes(v.userId)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),[friends,videos]);
-  const filtered = useMemo(()=>!search?friendsVideos:friendsVideos.filter(v=>v.username.toLowerCase().includes(search.toLowerCase())||v.description.toLowerCase().includes(search.toLowerCase())),[friendsVideos,search]);
-  return (
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [showSearch, setShowSearch] = useState(false);
+  const startY = useRef(null);
+
+  const friendsVideos = useMemo(()=>
+    videos.filter(v=>friends.includes(v.userId)).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)),
+  [friends,videos]);
+
+  const filtered = useMemo(()=>
+    !search ? friendsVideos : friendsVideos.filter(v=>
+      v.username.toLowerCase().includes(search.toLowerCase()) ||
+      v.description.toLowerCase().includes(search.toLowerCase())
+    ),
+  [friendsVideos,search]);
+
+  // Reset index when filter changes
+  useEffect(()=>setCurrentIndex(0),[search]);
+
+  const handleTouchStart = e => { startY.current = e.touches[0].clientY; };
+  const handleTouchEnd = e => {
+    if(startY.current===null) return;
+    const dy = startY.current - e.changedTouches[0].clientY;
+    if(Math.abs(dy)>50){
+      if(dy>0) setCurrentIndex(i=>Math.min(filtered.length-1,i+1));
+      else setCurrentIndex(i=>Math.max(0,i-1));
+    }
+    startY.current = null;
+  };
+
+  if(filtered.length===0) return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#0a0a0a' }}>
-      <Stories users={users} currentUser={currentUser} onViewStory={onViewStory} onCreateStory={onCreateStory} />
-      <div style={{ padding:'10px 14px', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.05)', borderRadius:28, padding:'10px 16px', border:'1px solid rgba(255,255,255,0.07)' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search friends..." style={{ flex:1, background:'none', border:'none', color:'white', outline:'none', fontSize:13 }} />
+      {/* Top bar */}
+      <div style={{ position:'relative', zIndex:15, padding:'14px 16px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ color:'white', fontWeight:800, fontSize:18, fontFamily:"'Syne',sans-serif" }}>Friends</div>
+        <button onClick={()=>setShowSearch(v=>!v)} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+      </div>
+      {showSearch && (
+        <div style={{ padding:'10px 14px', zIndex:15 }}>
+          <div style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(255,255,255,0.07)', borderRadius:28, padding:'10px 16px', border:'1px solid rgba(255,255,255,0.08)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search friends..." style={{ flex:1, background:'none', border:'none', color:'white', outline:'none', fontSize:13 }} />
+            {search && <button onClick={()=>setSearch('')} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.4)', cursor:'pointer', fontSize:16 }}>✕</button>}
+          </div>
         </div>
+      )}
+      <Stories users={users} currentUser={currentUser} onViewStory={onViewStory} onCreateStory={onCreateStory} />
+      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12, color:'rgba(255,255,255,0.2)' }}>
+        <div style={{ fontSize:44 }}>👥</div>
+        <div style={{ fontSize:14 }}>{search ? 'No results found' : 'Follow people to see their videos here'}</div>
       </div>
-      <div style={{ flex:1, overflowY:'auto' }}>
-        {filtered.length===0 ? (
-          <div style={{ textAlign:'center', padding:60, color:'rgba(255,255,255,0.2)' }}>
-            <div style={{ fontSize:44, marginBottom:12 }}>👥</div>
-            <div style={{ fontSize:14 }}>Follow people to see their videos here</div>
-          </div>
-        ) : (
-          <div style={{ padding:14 }}>
-            {filtered.map(video=>(
-              <div key={video.id} style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, marginBottom:14, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ background:'#000', minHeight:160 }}>
-                  <video src={video.videoUrl} style={{ width:'100%', maxHeight:220 }} controls />
-                </div>
-                <div style={{ padding:'12px 14px' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-                    <div onClick={()=>onViewProfile?.(video.userId)} style={{ width:38, height:38, borderRadius:'50%', background:video.avatarColor, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:14, cursor:'pointer', overflow:'hidden' }}>
-                      {video.avatarUrl ? <img src={video.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : video.avatar}
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ color:'white', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:"'Syne',sans-serif" }} onClick={()=>onViewProfile?.(video.userId)}>@{video.username}</div>
-                      <div style={{ color:'rgba(255,255,255,0.3)', fontSize:11 }}>{formatNumber(video.views)} views</div>
-                    </div>
-                    <button onClick={()=>onMessage?.(video.userId)} style={{ background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:20, padding:'7px 14px', color:'white', fontSize:12, cursor:'pointer', fontWeight:600 }}>Message</button>
-                  </div>
-                  <p style={{ color:'rgba(255,255,255,0.6)', fontSize:12, lineHeight:1.4 }}>{video.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+    </div>
+  );
+
+  return (
+    <div style={{ height:'100%', position:'relative', overflow:'hidden', background:'#000' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+
+      {/* Fullscreen video cards — same as HomeFeed */}
+      {filtered.map((video,idx)=>(
+        <div key={video.id} style={{ position:'absolute', inset:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
+          <EnhancedVideoCard
+            video={video}
+            currentUser={currentUser}
+            onLike={()=>{}}
+            onComment={()=>{}}
+            onShare={()=>{}}
+            onFollow={onFollow}
+            onMessage={onMessage}
+            onVoiceCall={onVoiceCall}
+            onVideoCall={onVideoCall}
+            onDuet={()=>showToast?.('Duet mode ready','info')}
+            onStitch={()=>showToast?.('Stitch mode ready','info')}
+            onSaveSound={()=>showToast?.('Sound saved!','success')}
+            followed={followed}
+            showToast={showToast}
+            onViewProfile={onViewProfile}
+          />
+        </div>
+      ))}
+
+      {/* Top overlay: Friends label + search */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:15, padding:'14px 16px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ color:'white', fontWeight:800, fontSize:18, fontFamily:"'Syne',sans-serif", textShadow:'0 1px 8px rgba(0,0,0,0.8)' }}>Friends</div>
+        <button onClick={()=>setShowSearch(v=>!v)} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
       </div>
+
+      {/* Search bar (dropdown) */}
+      {showSearch && (
+        <div style={{ position:'absolute', top:60, left:14, right:14, zIndex:20 }}>
+          <div style={{ display:'flex', gap:8, alignItems:'center', background:'rgba(10,10,10,0.92)', backdropFilter:'blur(16px)', borderRadius:28, padding:'10px 16px', border:'1px solid rgba(255,255,255,0.12)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search friends..." style={{ flex:1, background:'none', border:'none', color:'white', outline:'none', fontSize:13 }} />
+            {search && <button onClick={()=>setSearch('')} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.5)', cursor:'pointer', fontSize:16 }}>✕</button>}
+          </div>
+        </div>
+      )}
+
+      {/* Stories row — pinned above the video */}
+      <div style={{ position:'absolute', top:showSearch?106:56, left:0, right:0, zIndex:14 }}>
+        <Stories users={users} currentUser={currentUser} onViewStory={onViewStory} onCreateStory={onCreateStory} />
+      </div>
+
+      {/* Scroll position dots */}
+      {filtered.length>1 && (
+        <div style={{ position:'absolute', right:6, top:'50%', transform:'translateY(-50%)', display:'flex', flexDirection:'column', gap:4, zIndex:10 }}>
+          {filtered.map((_,i)=>(
+            <div key={i} onClick={()=>setCurrentIndex(i)} style={{ width:3, height:i===currentIndex?20:4, borderRadius:2, background:i===currentIndex?'white':'rgba(255,255,255,0.2)', cursor:'pointer', transition:'all 0.2s' }} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -1326,105 +1377,6 @@ const PrivacyToggles = ({ user, showToast }) => {
     </div>
   );
 };
-/* ─────────────── DELETE ACCOUNT PAGE ─────────────── */
-const DeleteAccountPage = ({ user, onLogout, showToast, onBack }) => {
-  const [step, setStep] = useState(1); // 1=warning, 2=confirm-type, 3=deleting
-  const [typed, setTyped] = useState('');
-  const [reason, setReason] = useState('');
-  const CONFIRM_WORD = 'DELETE';
-
-  const handleDelete = async () => {
-    if(typed !== CONFIRM_WORD){ showToast?.('Please type DELETE exactly','error'); return; }
-    setStep(3);
-    try {
-      // Send goodbye email
-      await sendEmailJS({ to_email: user?.email, from_name:'Dagu', message:`Your account @${user?.username} has been permanently deleted. We're sorry to see you go.` });
-      // Delete user Firestore doc
-      await deleteDoc(doc(db,'users',user.id));
-      // Delete Firebase Auth user
-      await auth.currentUser?.delete();
-      onLogout?.();
-    } catch(e) {
-      showToast?.('Re-authentication required. Please log out and log in again, then try again.','error');
-      setStep(2);
-    }
-  };
-
-  if(step===3) return (
-    <div style={{ height:'100%', background:'#0a0a0a', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:20, padding:32 }}>
-      <div style={{ width:32, height:32, border:'3px solid rgba(255,45,85,0.3)', borderTop:'3px solid #ff2d55', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
-      <div style={{ color:'white', fontSize:16 }}>Deleting your account...</div>
-    </div>
-  );
-
-  return (
-    <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
-      <button onClick={onBack} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13, marginBottom:20, display:'flex', alignItems:'center', gap:6 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
-      </button>
-
-      {step===1 && (
-        <>
-          <div style={{ textAlign:'center', marginBottom:28 }}>
-            <div style={{ fontSize:56, marginBottom:12 }}>⚠️</div>
-            <div style={{ color:'white', fontWeight:800, fontSize:22, fontFamily:"'Syne',sans-serif", marginBottom:8 }}>Delete Account</div>
-            <div style={{ color:'rgba(255,255,255,0.45)', fontSize:14, lineHeight:1.6 }}>This action is permanent and cannot be undone.</div>
-          </div>
-          <div style={{ background:'rgba(255,45,85,0.08)', border:'1px solid rgba(255,45,85,0.2)', borderRadius:20, padding:20, marginBottom:20 }}>
-            <div style={{ color:'#ff2d55', fontWeight:700, fontSize:14, marginBottom:12 }}>What will be deleted:</div>
-            {['Your profile and username','All your videos and posts','Your followers and following list','Your coins and wallet balance','Your messages and conversations','Your likes, comments and activity'].map(item=>(
-              <div key={item} style={{ color:'rgba(255,255,255,0.6)', fontSize:13, marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ color:'#ff2d55', fontSize:16 }}>×</span>{item}
-              </div>
-            ))}
-          </div>
-          <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, padding:20, marginBottom:24, border:'1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ color:'white', fontSize:13, marginBottom:12, fontWeight:600 }}>Before you go, tell us why (optional):</div>
-            {['I have a privacy concern','I created a duplicate account','I want a break from social media','The app is not working for me','Other reason'].map(r=>(
-              <div key={r} onClick={()=>setReason(r)} style={{ padding:'10px 14px', borderRadius:12, marginBottom:6, cursor:'pointer', background:reason===r?'rgba(255,45,85,0.12)':'rgba(255,255,255,0.03)', border:reason===r?'1px solid rgba(255,45,85,0.3)':'1px solid rgba(255,255,255,0.05)', color:reason===r?'#ff2d55':'rgba(255,255,255,0.65)', fontSize:13 }}>{r}</div>
-            ))}
-          </div>
-          <button onClick={()=>setStep(2)} style={{ width:'100%', background:'linear-gradient(135deg,#ff2d55,#c0392b)', border:'none', borderRadius:20, padding:15, color:'white', fontWeight:700, cursor:'pointer', fontSize:15, fontFamily:"'Syne',sans-serif" }}>
-            Continue to Delete
-          </button>
-          <button onClick={onBack} style={{ width:'100%', background:'none', border:'1px solid rgba(255,255,255,0.1)', borderRadius:20, padding:14, color:'rgba(255,255,255,0.6)', cursor:'pointer', fontSize:14, marginTop:10 }}>
-            Keep My Account
-          </button>
-        </>
-      )}
-
-      {step===2 && (
-        <>
-          <div style={{ textAlign:'center', marginBottom:28 }}>
-            <div style={{ fontSize:48, marginBottom:12 }}>🗑️</div>
-            <div style={{ color:'white', fontWeight:800, fontSize:20, fontFamily:"'Syne',sans-serif", marginBottom:8 }}>Final Confirmation</div>
-            <div style={{ color:'rgba(255,255,255,0.45)', fontSize:14 }}>Type <span style={{ color:'#ff2d55', fontWeight:700 }}>DELETE</span> to confirm</div>
-          </div>
-          <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, padding:20, marginBottom:20, border:'1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ color:'rgba(255,255,255,0.4)', fontSize:12, marginBottom:8 }}>Account: <span style={{ color:'white' }}>@{user?.username}</span></div>
-            <div style={{ color:'rgba(255,255,255,0.4)', fontSize:12 }}>Email: <span style={{ color:'white' }}>{user?.email}</span></div>
-          </div>
-          <input
-            value={typed}
-            onChange={e=>setTyped(e.target.value.toUpperCase())}
-            placeholder="Type DELETE here"
-            style={{ width:'100%', background:'rgba(255,255,255,0.05)', border:`1px solid ${typed===CONFIRM_WORD?'#ff2d55':'rgba(255,255,255,0.1)'}`, borderRadius:16, padding:'14px 16px', color:'white', outline:'none', fontSize:16, fontWeight:700, textAlign:'center', letterSpacing:3, boxSizing:'border-box', marginBottom:20 }}
-          />
-          <button
-            onClick={handleDelete}
-            disabled={typed!==CONFIRM_WORD}
-            style={{ width:'100%', background:typed===CONFIRM_WORD?'linear-gradient(135deg,#ff2d55,#c0392b)':'rgba(255,255,255,0.05)', border:'none', borderRadius:20, padding:15, color:typed===CONFIRM_WORD?'white':'rgba(255,255,255,0.25)', fontWeight:700, cursor:typed===CONFIRM_WORD?'pointer':'not-allowed', fontSize:15, fontFamily:"'Syne',sans-serif", marginBottom:10 }}>
-            Permanently Delete Account
-          </button>
-          <button onClick={()=>setStep(1)} style={{ width:'100%', background:'none', border:'1px solid rgba(255,255,255,0.1)', borderRadius:20, padding:14, color:'rgba(255,255,255,0.6)', cursor:'pointer', fontSize:14 }}>
-            Go Back
-          </button>
-        </>
-      )}
-    </div>
-  );
-};
-
 /* ─────────────── PROFILE PAGE ─────────────── */
 const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowAnalytics, onShowQRCode, allVideos }) => {
   const [activeSubPage, setActiveSubPage] = useState(null);
@@ -1437,113 +1389,6 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
   if(activeSubPage==='qrcode'){onShowQRCode?.(); setActiveSubPage(null); return null;}
   if(activeSubPage==='wallet') return <WalletPage user={user} setCurrentUser={setCurrentUser} showToast={showToast} onBack={()=>setActiveSubPage(null)} />;
 
-  if(activeSubPage==='emailphone') return (
-    <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
-      <button onClick={()=>setActiveSubPage('settings')} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13, marginBottom:20, display:'flex', alignItems:'center', gap:6 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
-      </button>
-      <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:24, fontFamily:"'Syne',sans-serif" }}>Email & Phone</div>
-      <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, padding:'20px 16px', marginBottom:16, border:'1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ color:'rgba(255,255,255,0.4)', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, marginBottom:8 }}>Email Address</div>
-        <div style={{ color:'white', fontSize:15, fontWeight:600 }}>{user?.email||'Not set'}</div>
-        <div style={{ color:'rgba(255,255,255,0.3)', fontSize:12, marginTop:4 }}>Used for login and notifications</div>
-      </div>
-      <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, padding:'20px 16px', marginBottom:24, border:'1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ color:'rgba(255,255,255,0.4)', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:0.8, marginBottom:8 }}>Phone Number</div>
-        <div style={{ color:'rgba(255,255,255,0.4)', fontSize:15 }}>Not added</div>
-        <button onClick={()=>showToast?.('Phone update coming soon','info')} style={{ marginTop:12, background:'rgba(255,45,85,0.1)', border:'1px solid rgba(255,45,85,0.3)', borderRadius:14, padding:'9px 20px', color:'#ff2d55', cursor:'pointer', fontSize:13, fontWeight:600 }}>+ Add Phone Number</button>
-      </div>
-      <button onClick={async()=>{ if(user?.email){ await sendPasswordResetEmail(auth,user.email); showToast?.('Password reset email sent!','success'); } }} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:20, padding:14, color:'white', cursor:'pointer', fontSize:14 }}>Change Password via Email</button>
-    </div>
-  );
-
-  if(activeSubPage==='language') return (
-    <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
-      <button onClick={()=>setActiveSubPage('settings')} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13, marginBottom:20, display:'flex', alignItems:'center', gap:6 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
-      </button>
-      <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:24, fontFamily:"'Syne',sans-serif" }}>Language</div>
-      <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)' }}>
-        {[['🇺🇸','English','en'],['🇪🇹','Amharic','am'],['🇫🇷','French','fr'],['🇩🇪','German','de'],['🇸🇦','Arabic','ar'],['🇪🇸','Spanish','es'],['🇵🇹','Portuguese','pt']].map(([flag,name,code],i,arr)=>(
-          <div key={code} onClick={()=>showToast?.(`Language set to ${name}`,'success')} style={{ padding:'14px 16px', borderBottom:i<arr.length-1?'1px solid rgba(255,255,255,0.05)':'', display:'flex', alignItems:'center', gap:14, cursor:'pointer' }}>
-            <span style={{ fontSize:22 }}>{flag}</span>
-            <span style={{ color:'white', flex:1, fontSize:14 }}>{name}</span>
-            {code==='en' && <span style={{ color:'#ff2d55', fontSize:12, fontWeight:700 }}>✓ Active</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  if(activeSubPage==='helpcenter') return (
-    <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
-      <button onClick={()=>setActiveSubPage('settings')} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13, marginBottom:20, display:'flex', alignItems:'center', gap:6 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
-      </button>
-      <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:8, fontFamily:"'Syne',sans-serif" }}>Help Center</div>
-      <div style={{ color:'rgba(255,255,255,0.4)', fontSize:13, marginBottom:24 }}>Find answers to common questions</div>
-      {[{q:'How do I reset my password?',a:'Go to Settings → Change Password. We\'ll send a reset link to your email.'},
-        {q:'How do I report content?',a:'Tap the ⋮ menu on any post and select Report. Our team reviews all reports within 24h.'},
-        {q:'Can I delete a posted video?',a:'Yes — long press any of your videos on your profile, then tap Delete.'},
-        {q:'How do I earn coins?',a:'Post videos, get likes, and complete daily streaks to earn coins. Coins can be used to send gifts.'},
-        {q:'How do I go live?',a:'Tap the LIVE button on the home feed. You need at least 100 followers to start a live.'},
-        {q:'How do I contact support?',a:'Use "Report a Problem" in Settings, or email support@dagu.app'}
-      ].map(({q,a},i)=>(
-        <div key={i} style={{ background:'rgba(255,255,255,0.03)', borderRadius:18, padding:'16px', marginBottom:10, border:'1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ color:'white', fontWeight:700, fontSize:14, marginBottom:8 }}>{q}</div>
-          <div style={{ color:'rgba(255,255,255,0.5)', fontSize:13, lineHeight:1.5 }}>{a}</div>
-        </div>
-      ))}
-    </div>
-  );
-
-  if(activeSubPage==='terms') return (
-    <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
-      <button onClick={()=>setActiveSubPage('settings')} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13, marginBottom:20, display:'flex', alignItems:'center', gap:6 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
-      </button>
-      <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:4, fontFamily:"'Syne',sans-serif" }}>Terms of Service</div>
-      <div style={{ color:'rgba(255,255,255,0.3)', fontSize:12, marginBottom:24 }}>Last updated: June 2025</div>
-      {[['1. Acceptance of Terms','By using Dagu, you agree to these Terms. If you do not agree, please discontinue use of the platform.'],
-        ['2. User Content','You retain ownership of content you post. By posting, you grant Dagu a non-exclusive license to display and distribute your content on the platform.'],
-        ['3. Community Guidelines','Users must not post harmful, illegal, hateful, or misleading content. Violations may result in account suspension or permanent ban.'],
-        ['4. Privacy','Your data is handled per our Privacy Policy. We do not sell personal data to third parties.'],
-        ['5. Payments & Coins','Coin purchases are final and non-refundable unless required by law. Virtual gifts have no cash value outside the platform.'],
-        ['6. Termination','We reserve the right to suspend or terminate accounts that violate these Terms at our sole discretion.'],
-        ['7. Contact','For questions about these Terms, email: legal@dagu.app']
-      ].map(([title,body])=>(
-        <div key={title} style={{ marginBottom:20 }}>
-          <div style={{ color:'white', fontWeight:700, fontSize:15, marginBottom:6, fontFamily:"'Syne',sans-serif" }}>{title}</div>
-          <div style={{ color:'rgba(255,255,255,0.5)', fontSize:13, lineHeight:1.6 }}>{body}</div>
-        </div>
-      ))}
-    </div>
-  );
-
-  if(activeSubPage==='privacypolicy') return (
-    <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
-      <button onClick={()=>setActiveSubPage('settings')} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13, marginBottom:20, display:'flex', alignItems:'center', gap:6 }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
-      </button>
-      <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:4, fontFamily:"'Syne',sans-serif" }}>Privacy Policy</div>
-      <div style={{ color:'rgba(255,255,255,0.3)', fontSize:12, marginBottom:24 }}>Last updated: June 2025</div>
-      {[['Data We Collect','We collect your email, username, profile info, and content you post. We also collect usage data to improve the app.'],
-        ['How We Use Data','Your data is used to provide and improve our services, send notifications, and keep your account secure. We never sell your data.'],
-        ['Firebase & Cloudinary','We use Firebase for authentication and data storage, and Cloudinary for media storage. Both are bound by their own privacy policies.'],
-        ['Your Rights','You can request deletion of your account and data at any time from Settings → Delete Account.'],
-        ['Cookies & Analytics','We use anonymous analytics to understand usage patterns. No personally identifiable data is shared with analytics providers.'],
-        ['Contact','Questions about privacy? Email: privacy@dagu.app']
-      ].map(([title,body])=>(
-        <div key={title} style={{ marginBottom:20 }}>
-          <div style={{ color:'white', fontWeight:700, fontSize:15, marginBottom:6, fontFamily:"'Syne',sans-serif" }}>{title}</div>
-          <div style={{ color:'rgba(255,255,255,0.5)', fontSize:13, lineHeight:1.6 }}>{body}</div>
-        </div>
-      ))}
-    </div>
-  );
-
-  if(activeSubPage==='deleteaccount') return <DeleteAccountPage user={user} onLogout={onLogout} showToast={showToast} onBack={()=>setActiveSubPage('settings')} />;
-
   if(activeSubPage==='settings') return (
     <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a' }}>
       <div style={{ padding:'16px' }}>
@@ -1555,9 +1400,9 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
         <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, overflow:'hidden', marginBottom:20, border:'1px solid rgba(255,255,255,0.06)' }}>
           {[
             {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,label:'Edit Profile',action:()=>{setShowEditProfile(true); setActiveSubPage(null);}},
-            {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>,label:'Change Password',action:async()=>{if(user?.email){await sendPasswordResetEmail(auth,user.email); showToast?.('Password reset email sent to '+user.email,'success');}else showToast?.('No email on account','error');}},
-            {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,label:'Email & Phone',action:()=>setActiveSubPage('emailphone')},
-            {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>,label:'Language',action:()=>setActiveSubPage('language')},
+            {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>,label:'Change Password',action:async()=>{if(user?.email){await sendPasswordResetEmail(auth,user.email); showToast?.('Password reset email sent!','success');}else showToast?.('No email on account','error');}},
+            {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,label:'Email & Phone',action:()=>showToast?.(user?.email||'No email','info')},
+            {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>,label:'Language',action:()=>showToast?.('Language: English','info')},
             {icon:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,label:'Switch Account',action:()=>setActiveSubPage('switch')},
           ].map((item,i,arr)=>(
             <div key={item.label} onClick={item.action} style={{ padding:'15px 16px', borderBottom:i<arr.length-1?'1px solid rgba(255,255,255,0.05)':'', display:'flex', alignItems:'center', gap:14, cursor:'pointer' }}>
@@ -1572,13 +1417,13 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
         <div style={{ color:'rgba(255,255,255,0.3)', fontSize:11, fontWeight:700, marginBottom:8, textTransform:'uppercase', letterSpacing:1.2 }}>Support</div>
         <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:20, overflow:'hidden', marginBottom:20, border:'1px solid rgba(255,255,255,0.06)' }}>
           {[
-            {label:'Help Center',action:()=>setActiveSubPage('helpcenter')},
+            {label:'Help Center',action:()=>showToast?.('Help center','info')},
             {label:'Report a Problem',action:async()=>{
               await sendEmailJS({to_email:'getachewshambel11@gmail.com',from_name:user?.username,message:`User ${user?.username} (${user?.email}) reported a problem.`});
               showToast?.('Report sent!','success');
             }},
-            {label:'Terms of Service',action:()=>setActiveSubPage('terms')},
-            {label:'Privacy Policy',action:()=>setActiveSubPage('privacypolicy')},
+            {label:'Terms of Service',action:()=>showToast?.('Terms of Service','info')},
+            {label:'Privacy Policy',action:()=>showToast?.('Privacy Policy','info')},
           ].map((item,i,arr)=>(
             <div key={item.label} onClick={item.action} style={{ padding:'14px 16px', borderBottom:i<arr.length-1?'1px solid rgba(255,255,255,0.05)':'', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
               <span style={{ color:'white', flex:1, fontSize:14 }}>{item.label}</span>
@@ -1591,7 +1436,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             <span style={{ color:'#ff9500', fontSize:14 }}>Log Out</span>
           </div>
-          <div onClick={()=>setActiveSubPage('deleteaccount')} style={{ padding:'14px 16px', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
+          <div onClick={async()=>{if(window.confirm('Delete account? This cannot be undone.')){try{ await deleteDoc(doc(db,'users',user.id)); await auth.currentUser?.delete(); onLogout?.(); }catch(e){ showToast?.('Re-login required to delete','error'); }}}} style={{ padding:'14px 16px', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff2d55" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
             <span style={{ color:'#ff2d55', fontSize:14 }}>Delete Account</span>
           </div>
@@ -1803,7 +1648,6 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const [recordSecs, setRecordSecs] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
-  const [showEmoji, setShowEmoji] = useState(false);
   const bottomRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -1911,16 +1755,12 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
         </div>
       )}
 
-      <div style={{padding:'10px 14px 28px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center',position:'relative'}}>
-        {showEmoji && <EmojiPicker onSelect={e=>setText(t=>t+e)} onClose={()=>setShowEmoji(false)} />}
+      <div style={{padding:'10px 14px 28px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center'}}>
         <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={pickFile} style={{display:'none'}}/>
-        <div style={{flex:1,position:'relative',display:'flex',alignItems:'center',background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28}}>
-          <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'none',border:'none',padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
-          <button onClick={()=>setShowEmoji(v=>!v)} style={{background:'none',border:'none',fontSize:18,cursor:'pointer',padding:'0 10px',opacity:0.7,flexShrink:0}}>😊</button>
-        </div>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
         <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 12px rgba(255,45,85,0.6)':'none'}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
@@ -2728,7 +2568,7 @@ export default function DaguV3App() {
         {!showSearch && !showCamera && (
           <>
             {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} />}
-            {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} />}
+            {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
             {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} />}
             {activeTab==='profile' && <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} users={users} showToast={showToast} onShowAnalytics={()=>setShowAnalytics(true)} onShowQRCode={()=>setShowQRCode(true)} allVideos={videos} />}
