@@ -522,7 +522,10 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
               <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:2 }}>
                 {mockVideos.map(v=>(
                   <div key={v.id} style={{ aspectRatio:'9/16', background:'#1a1a1a', position:'relative', overflow:'hidden' }}>
-                    <video src={v.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                    {v.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) ?
+  <img src={v.videoUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> :
+  <video src={v.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+}
                     <div style={{ position:'absolute', bottom:4, left:6, color:'white', fontSize:10, fontWeight:700, background:'rgba(0,0,0,0.6)', borderRadius:6, padding:'2px 6px' }}>{formatNumber(v.views)}</div>
                   </div>
                 ))}
@@ -748,7 +751,10 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
 
   return (
     <div style={{ position:'absolute', inset:0, background:'#000' }} onDoubleClick={handleDoubleTap}>
-      <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted autoPlay playsInline />
+      {video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image') ?
+  <img src={video.videoUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> :
+  <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted autoPlay playsInline />
+}
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.1) 40%,rgba(0,0,0,0.3) 100%)' }} />
       {heartAnim && (
         <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:50, pointerEvents:'none' }}>
@@ -1717,6 +1723,7 @@ avatar: currentUser.avatar || (currentUser.username||'U')[0].toUpperCase(),
         verified: currentUser.verified || false,
         description: description || 'New post! 🔥',
         videoUrl: mediaUrl,
+        mediaType: selectedFile?.type || 'video/mp4',
         song: 'Original sound',
         likes: 0,
         comments: 0,
