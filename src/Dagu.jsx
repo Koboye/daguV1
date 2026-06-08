@@ -1984,51 +1984,7 @@ const CameraUpload = ({ onUpload, onClose, showToast, currentUser }) => {
   );
 };
 
-  useEffect(()=>()=>stopCamera(),[]);
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'#0a0a0a', zIndex:100, display:'flex', flexDirection:'column' }}>
-      <div style={{ padding:'14px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={()=>{stopCamera(); onClose();}} style={{ background:'rgba(255,255,255,0.06)', border:'none', borderRadius:20, padding:'8px 16px', color:'white', cursor:'pointer', fontSize:13 }}>Cancel</button>
-        <h3 style={{ color:'white', fontSize:16, fontWeight:800, fontFamily:"'Syne',sans-serif" }}>New Post</h3>
-        <button onClick={handleUpload} disabled={uploading} style={{ background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:20, padding:'8px 18px', color:'white', fontWeight:700, cursor:uploading?'default':'pointer', fontSize:13, opacity:uploading?0.6:1 }}>
-          {uploading?`${uploadProgress}%`:'Post'}
-        </button>
-      </div>
-      {uploading && (
-        <div style={{ height:3, background:'rgba(255,255,255,0.1)' }}>
-          <div style={{ height:'100%', background:'linear-gradient(90deg,#ff2d55,#af52de)', width:`${uploadProgress}%`, transition:'width 0.3s' }} />
-        </div>
-      )}
-      <div style={{ flex:1, overflow:'auto', padding:16 }}>
-        <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-          <button onClick={stopCamera} style={{ flex:1, background:!showCamera?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.06)', border:'none', borderRadius:14, padding:12, color:'white', cursor:'pointer', fontSize:13, fontWeight:600 }}>Gallery</button>
-          <button onClick={startCamera} style={{ flex:1, background:showCamera?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.06)', border:'none', borderRadius:14, padding:12, color:'white', cursor:'pointer', fontSize:13, fontWeight:600 }}>Camera</button>
-        </div>
-        <div style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:20, marginBottom:14, minHeight:280, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
-          {showCamera ? (
-            <div style={{ position:'relative', width:'100%' }}>
-              <video ref={videoRef} autoPlay playsInline style={{ width:'100%', borderRadius:20 }} />
-              <button onClick={capturePhoto} style={{ position:'absolute', bottom:16, left:'50%', transform:'translateX(-50%)', background:'white', border:'4px solid rgba(255,255,255,0.3)', borderRadius:'50%', width:60, height:60, fontSize:26, cursor:'pointer' }}>📸</button>
-            </div>
-          ) : selectedFile?.type?.startsWith('image/') ? (
-            <img src={selectedFile.url} alt="" style={{ width:'100%', borderRadius:20 }} />
-          ) : selectedFile?.type?.startsWith('video/') ? (
-            <video src={selectedFile.url} controls style={{ width:'100%', borderRadius:20 }} />
-          ) : (
-            <label style={{ textAlign:'center', cursor:'pointer', padding:48, display:'block', width:'100%' }}>
-              <div style={{ fontSize:48, marginBottom:10 }}>📁</div>
-              <div style={{ color:'rgba(255,255,255,0.3)', fontSize:14 }}>Tap to choose from gallery</div>
-              <input type="file" accept="video/*,image/*" onChange={handleFileSelect} style={{ display:'none' }} />
-            </label>
-          )}
-        </div>
-        <textarea placeholder="Write a caption..." value={description} onChange={e=>setDescription(e.target.value)} style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:16, padding:'12px 14px', color:'white', minHeight:80, outline:'none', fontSize:13, resize:'none', boxSizing:'border-box' }} />
-      </div>
-    </div>
-  );
-};
-
+  
 /* ─────────────── SOUND LIBRARY ─────────────── */
 const SoundLibraryPage = ({ onSelectSound, onClose }) => {
   const [search, setSearch] = useState('');
