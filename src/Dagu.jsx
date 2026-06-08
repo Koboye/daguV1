@@ -1763,6 +1763,8 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
       </div>
       const InboxPage
 
+};
+
 const InboxPage = ({ users, currentUser, showToast, onViewProfile }) => {
   const [activeConversation, setActiveConversation] = useState(null);
   const [conversations, setConversations] = useState([]);
