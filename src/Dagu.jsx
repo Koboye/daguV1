@@ -325,6 +325,11 @@ const ShareModal = ({ video, onClose, showToast }) => {
   );
 };
 
+<StoryReplyInput story={story} user={user} onClose={onClose} />
+    </div>
+  );
+};
+
 const StoryReplyInput = ({ story, user, onClose }) => {
   const [reply, setReply] = useState('');
   const sendReply = async () => {
@@ -343,7 +348,6 @@ const StoryReplyInput = ({ story, user, onClose }) => {
     <div style={{ padding:'14px 16px 24px', display:'flex', gap:10 }}>
       <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendReply()} placeholder="Reply to story..." style={{ flex:1, background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:28, padding:'10px 16px', color:'white', outline:'none', fontSize:13 }} />
       <button onClick={sendReply} style={{ background:'#ff2d55', border:'none', borderRadius:'50%', width:42, height:42, color:'white', cursor:'pointer', fontSize:16 }}>↑</button>
-    </div>
     </div>
   );
 };
