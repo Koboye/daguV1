@@ -7,9 +7,10 @@ import {
   updateProfile, sendPasswordResetEmail
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
-  getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, addDoc, deleteDoc,
-  collection, query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, increment
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut,
+  updateProfile, sendPasswordResetEmail, sendEmailVerification
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
 /* ─────────────── FIREBASE CONFIG ─────────────── */
 const firebaseConfig = {
@@ -420,32 +421,37 @@ const CreateStoryModal = ({ currentUser, onClose, showToast }) => {
   useEffect(() => { if (mode==='camera') startCamera(); return ()=>stopCamera(); }, [mode]);
 
   const handlePost = async () => {
+    if(!storyText.trim() && !selectedFile && !audioBlob){
+      showToast?.('Add text, photo, or audio first','error');
+      return;
+    }
     setUploading(true);
     try {
       let mediaUrl = null, mediaType = null;
       if (selectedFile?.file) {
-        mediaUrl = await uploadToCloudinary(selectedFile.file);
+        mediaUrl = await uploadToCloudinary(selectedFile.file, ()=>{});
         mediaType = selectedFile.type;
       } else if (audioBlob) {
-        mediaUrl = await uploadToCloudinary(audioBlob);
+        mediaUrl = await uploadToCloudinary(audioBlob, ()=>{});
         mediaType = 'audio/webm';
       }
       await addDoc(collection(db, 'stories'), {
         userId: currentUser.id,
-        username: currentUser.username,
-        avatarColor: currentUser.avatarColor,
+        username: currentUser.username || '',
+        avatarColor: currentUser.avatarColor || '#ff2d55',
         avatarUrl: currentUser.avatarUrl || null,
-        text: storyText,
-        bgColor,
-        mediaUrl,
-        mediaType,
+        text: storyText || '',
+        bgColor: bgColor || '#ff2d55',
+        mediaUrl: mediaUrl || null,
+        mediaType: mediaType || null,
         createdAt: serverTimestamp(),
         expiresAt: new Date(Date.now() + 24*60*60*1000),
       });
       showToast?.('Story posted! ✨','success');
       onClose();
     } catch(e) {
-      showToast?.('Failed to post story','error');
+      console.error('Story post error:', e);
+      showToast?.(`Story failed: ${e.message}`,'error');
     }
     setUploading(false);
   };
@@ -549,7 +555,8 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
         </div>
         {!isOwn && (
           <div style={{ display:'flex', gap:8, padding:'0 16px 16px' }}>
-            <button onClick={()=>onFollow?.(user.id)} style={{ flex:1, background:isFollowing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#ff2d55,#af52de)', border:isFollowing?'1px solid rgba(255,255,255,0.12)':'none', borderRadius:14, padding:'12px', color:'white', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:"'Syne',sans-serif" }}>
+            style={{ flex:1, background:isFollowing?'rgba(255,255,255,0.06)':'linear-gradient(135deg,#ff2d55,#af52de)', border:isFollowing?'1px solid rgba(255,45,85,0.4)':'none', borderRadius:14, padding:'12px', color:isFollowing?'#ff2d55':'white', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:"'Syne',sans-serif" }}>
+              {isFollowing ? 'Unfollow' : '+ Follow'}
               {isFollowing ? 'Following' : '+ Follow'}
             </button>
             <button onClick={()=>{onMessage?.(user.id); onClose();}} style={{ flex:1, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:14, padding:'12px', color:'white', fontWeight:600, cursor:'pointer', fontSize:14 }}>Message</button>
@@ -636,7 +643,15 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   },[streamer]);
 
   useEffect(()=>{
-    if(!liveRef.current) return;
+    if(!videoRef.current) return;
+    if(isActive){
+      videoRef.current.play?.().catch(()=>{});
+      setIsPlaying(true);
+    } else {
+      videoRef.current.pause?.();
+      setIsPlaying(false);
+    }
+  },[isActive]);
     const q = query(collection(db,'liveMessages'), where('liveId','==',liveRef.current||''), orderBy('createdAt','asc'));
     const unsub = onSnapshot(q, snap=>{
       const msgs = snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -696,28 +711,45 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
 };
 
 /* ─────────────── COMMENT ITEM ─────────────── */
-const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, onViewProfile }) => (
-  <div style={{ display:'flex', gap:10, marginBottom:14 }}>
-    <div onClick={()=>onViewProfile?.(comment.userId)} style={{ width:34, height:34, borderRadius:'50%', background:comment.avatarColor||'#333', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:13, flexShrink:0, overflow:'hidden', cursor:'pointer' }}>
-      {comment.avatarUrl ? <img src={comment.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : (comment.avatar||'U')}
-    </div>
-    <div style={{ flex:1 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
-        <span onClick={()=>onViewProfile?.(comment.userId)} style={{ color:'white', fontWeight:700, fontSize:13, cursor:'pointer' }}>{comment.username}</span>
-        <span style={{ color:'rgba(255,255,255,0.3)', fontSize:11 }}>{comment.time||'1m'}</span>
+const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, onViewProfile }) => {
+  const isMine = comment.userId === currentUser?.id;
+  return (
+    <div style={{ display:'flex', justifyContent:isMine?'flex-end':'flex-start', alignItems:'flex-end', gap:8, marginBottom:12 }}>
+      {!isMine && (
+        <div onClick={()=>onViewProfile?.(comment.userId)} style={{ width:28, height:28, borderRadius:'50%', background:comment.avatarColor||'#333', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:11, flexShrink:0, overflow:'hidden', cursor:'pointer' }}>
+          {comment.avatarUrl ? <img src={comment.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : (comment.avatar||'U')}
+        </div>
+      )}
+      <div style={{ maxWidth:'72%' }}>
+        {!isMine && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+            <span onClick={()=>onViewProfile?.(comment.userId)} style={{ color:'rgba(255,255,255,0.6)', fontWeight:700, fontSize:11, cursor:'pointer' }}>@{comment.username}</span>
+            <span style={{ color:'rgba(255,255,255,0.25)', fontSize:10 }}>{comment.time||'1m'}</span>
+          </div>
+        )}
+        <div style={{ background:isMine?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.09)', borderRadius:isMine?'20px 20px 4px 20px':'20px 20px 20px 4px', padding:'10px 14px' }}>
+          {comment.mediaUrl && comment.mediaType?.startsWith('image') && <img src={comment.mediaUrl} alt="" style={{ maxWidth:'100%', borderRadius:10, display:'block', marginBottom:comment.text?6:0 }} />}
+          {comment.mediaUrl && comment.mediaType?.startsWith('video') && <video src={comment.mediaUrl} controls style={{ maxWidth:'100%', borderRadius:10, display:'block', marginBottom:comment.text?6:0 }} />}
+          {comment.mediaUrl && comment.mediaType?.startsWith('audio') && <audio src={comment.mediaUrl} controls style={{ width:'100%', marginBottom:comment.text?4:0 }} />}
+          {comment.text && <span style={{ color:'white', fontSize:13, lineHeight:1.4 }}>{comment.text}</span>}
+        </div>
+        <div style={{ display:'flex', gap:10, marginTop:4, justifyContent:isMine?'flex-end':'flex-start' }}>
+          <button onClick={()=>onLike?.(comment.id)} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.35)', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+            {comment.likes||0}
+          </button>
+          <button onClick={()=>onReply?.(comment)} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.35)', fontSize:11, cursor:'pointer' }}>Reply</button>
+          <button onClick={()=>onPin?.(comment.id)} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.25)', fontSize:10, cursor:'pointer' }}>Pin</button>
+        </div>
       </div>
-      <div style={{ color:'rgba(255,255,255,0.85)', fontSize:13, lineHeight:1.4 }}>{comment.text}</div>
-      <div style={{ display:'flex', gap:14, marginTop:6 }}>
-        <button onClick={()=>onLike?.(comment.id)} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.4)', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-          {comment.likes||0}
-        </button>
-        <button onClick={()=>onReply?.(comment)} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.4)', fontSize:12, cursor:'pointer' }}>Reply</button>
-        <button onClick={()=>onPin?.(comment.id)} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.3)', fontSize:11, cursor:'pointer' }}>Pin</button>
-      </div>
+      {isMine && (
+        <div style={{ width:28, height:28, borderRadius:'50%', background:currentUser?.avatarColor||'#ff2d55', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:11, flexShrink:0, overflow:'hidden' }}>
+          {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : (currentUser?.avatar||'U')}
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, showToast, videoId }) => {
   const [isRecording, setIsRecording] = useState(false);
 const [showEmoji, setShowEmoji] = useState(false);
@@ -760,8 +792,10 @@ const [showEmoji, setShowEmoji] = useState(false);
     if(previewFile?.file){ try{ mediaUrl=await uploadToCloudinary(previewFile.file); mediaType=previewFile.type; }catch{ showToast?.('Upload failed','error'); return; } }
     else if(audioBlob){ try{ mediaUrl=await uploadToCloudinary(audioBlob); mediaType='audio/webm'; }catch{ showToast?.('Upload failed','error'); return; } }
     if(!commentText.trim()&&!mediaUrl) return;
-    await addDoc(collection(db,'comments'),{ videoId, userId:currentUser.id, username:currentUser.username, avatar:currentUser.avatar||(currentUser.username||'U')[0].toUpperCase(), avatarColor:currentUser.avatarColor||'#ff2d55', avatarUrl:currentUser.avatarUrl||null, text:commentText, mediaUrl, mediaType, likes:0, createdAt:serverTimestamp() });
+    const commentRef = await addDoc(collection(db,'comments'),{ videoId, userId:currentUser.id, username:currentUser.username, avatar:currentUser.avatar||(currentUser.username||'U')[0].toUpperCase(), avatarColor:currentUser.avatarColor||'#ff2d55', avatarUrl:currentUser.avatarUrl||null, text:commentText, mediaUrl, mediaType, likes:0, createdAt:serverTimestamp() });
     await updateDoc(doc(db,'videos',videoId),{comments:increment(1)});
+    const parentVideo = (await getDoc(doc(db,'videos',videoId))).data();
+    if(parentVideo?.userId) await sendNotification(parentVideo.userId, currentUser.id, 'comment', `commented: "${commentText.substring(0,40)}"`, {videoId});
     setCommentText(''); clearAttach();
   };
 
@@ -801,7 +835,7 @@ const [showEmoji, setShowEmoji] = useState(false);
   );
 };
 /* ─────────────── ENHANCED VIDEO CARD ─────────────── */
-const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile }) => {
+const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile }) => {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(video?.likes||0);
   const [showComments, setShowComments] = useState(false);
@@ -862,7 +896,10 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
     } else {
       tapTimer.current = setTimeout(()=>{
         tapTimer.current = null;
-        if(videoRef.current){
+        const isImagePost = video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image');
+        if(isImagePost){
+          setIsPlaying(p => !p);
+        } else if(videoRef.current){
           if(isPlaying){ videoRef.current.pause(); setIsPlaying(false); }
           else { videoRef.current.play(); setIsPlaying(true); }
         }
@@ -876,6 +913,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
       setLikeCount(p=>p+1);
       await setDoc(doc(db,'likes',`${video.id}_${currentUser.id}`),{ videoId:video.id, userId:currentUser.id, createdAt:serverTimestamp() });
       await updateDoc(doc(db,'videos',video.id),{ likes:increment(1) });
+      await sendNotification(video.userId, currentUser.id, 'like', 'liked your post', {videoId:video.id});
     } else {
       setLiked(false);
       setLikeCount(p=>Math.max(0,p-1));
@@ -908,11 +946,11 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
     <div style={{ position:'absolute', inset:0, background:'#000' }} onClick={handleTap}>
       {video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image') ?
         <img src={video.videoUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> :
-        <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted={muted} autoPlay playsInline />
+        <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted autoPlay playsInline />
       }
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.1) 40%,rgba(0,0,0,0.3) 100%)' }} />
-      <button onClick={e=>{e.stopPropagation();setMuted(m=>!m);}} style={{position:'absolute',top:56,right:14,zIndex:10,background:'rgba(0,0,0,0.5)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:18}}>{muted?'🔇':'🔊'}</button>
-      {!isPlaying&&<div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}
+      
+      {!isPlaying && (video?.videoUrl && !video.videoUrl.match(/\.(jpg|jpeg|png|gif|webp)/i)) && !video?.mediaType?.startsWith('image') && <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}
       {heartAnim && (
         <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:50, pointerEvents:'none' }}>
           <div style={{ fontSize:80, animation:'heartBurst 0.9s ease forwards' }}>❤️</div>
@@ -927,7 +965,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
             {video.verified && <div style={{ position:'absolute', bottom:-2, right:-2, width:14, height:14, background:'#1d9bf0', borderRadius:'50%', fontSize:9, display:'flex', alignItems:'center', justifyContent:'center', color:'white' }}>✓</div>}
           </button>
           <span onClick={()=>onViewProfile?.(video.userId)} style={{ color:'white', fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:"'Syne',sans-serif" }}>@{video.username}</span>
-          <button onClick={()=>onFollow?.(video.userId)} style={{ padding:'5px 14px', borderRadius:20, background:followed?.includes(video.userId)?'transparent':'rgba(255,45,85,0.9)', border:followed?.includes(video.userId)?'1px solid rgba(255,255,255,0.4)':'none', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', backdropFilter:'blur(4px)' }}>{followed?.includes(video.userId)?'Following':'+ Follow'}</button>
+          <button onClick={()=>onFollow?.(video.userId)} style={{ padding:'5px 14px', borderRadius:20, background:followed?.includes(video.userId)?'rgba(255,255,255,0.08)':'rgba(255,45,85,0.9)', border:followed?.includes(video.userId)?'1px solid rgba(255,255,255,0.4)':'none', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', backdropFilter:'blur(4px)' }}>{followed?.includes(video.userId)?'Unfollow':'+ Follow'}</button>
           <button onClick={()=>setShowActionMenu(!showActionMenu)} style={{ background:'rgba(0,0,0,0.4)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:'50%', width:30, height:30, color:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(8px)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
           </button>
@@ -1023,7 +1061,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, onLike, onComment, onShare
 });
 
 /* ─────────────── HOME FEED ─────────────── */
-const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch }) => {
+const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('foryou');
   const filteredVideos = useMemo(()=>{
@@ -1053,7 +1091,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
           <button onClick={onOpenSearch} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
-          <button style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', position:'relative' }}>
+          <button onClick={onOpenNotifications} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', position:'relative' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             <div style={{ position:'absolute', top:8, right:8, width:8, height:8, background:'#ff2d55', borderRadius:'50%', border:'1.5px solid #000' }} />
           </button>
@@ -1061,7 +1099,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
       </div>
       {filteredVideos.map((video,idx)=>(
         <div key={video.id} style={{ position:'absolute', inset:0, opacity:idx===currentIndex?1:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
-          <EnhancedVideoCard video={video} currentUser={currentUser} onLike={onLike} onComment={onComment} onShare={onShare} onFollow={onFollow} onMessage={onMessage} onVoiceCall={onVoiceCall} onVideoCall={onVideoCall} onDuet={onDuet} onStitch={onStitch} onSaveSound={onSaveSound} followed={followed} showToast={showToast} onViewProfile={onViewProfile} />
+          <EnhancedVideoCard video={video} currentUser={currentUser} isActive={idx===currentIndex} onLike={onLike} onComment={onComment} onShare={onShare} onFollow={onFollow} onMessage={onMessage} onVoiceCall={onVoiceCall} onVideoCall={onVideoCall} onDuet={onDuet} onStitch={onStitch} onSaveSound={onSaveSound} followed={followed} showToast={showToast} onViewProfile={onViewProfile} />
         </div>
       ))}
       {filteredVideos.length>1 && (
@@ -1140,6 +1178,7 @@ const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onV
           <EnhancedVideoCard
             video={video}
             currentUser={currentUser}
+            isActive={idx===currentIndex}
             onLike={()=>{}}
             onComment={()=>{}}
             onShare={()=>{}}
@@ -1581,7 +1620,13 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
   return (
     <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a' }}>
       <div style={{ position:'relative', paddingBottom:20 }}>
-        <div style={{ height:120, background:'linear-gradient(135deg,rgba(255,45,85,0.3),rgba(175,82,222,0.3))', position:'absolute', top:0, left:0, right:0 }} />
+        <div style={{ height:160, position:'absolute', top:0, left:0, right:0, overflow:'hidden' }}>
+          {user?.avatarUrl
+            ? <img src={user.avatarUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', filter:'blur(24px) brightness(0.45) saturate(1.4)', transform:'scale(1.15)' }} />
+            : <div style={{ width:'100%', height:'100%', background:`linear-gradient(135deg,${user?.avatarColor||'#ff2d55'}88,rgba(175,82,222,0.4))` }} />
+          }
+          <div style={{ position:'absolute', inset:0, background:'linear-gradient(to bottom,rgba(10,10,10,0.2),rgba(10,10,10,0.85))' }} />
+        </div>
         <div style={{ position:'relative', padding:'52px 20px 0', textAlign:'center' }}>
           <div style={{ position:'absolute', top:10, right:16, display:'flex', gap:8 }}>
             <button onClick={()=>setActiveSubPage('qrcode')} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
@@ -1819,8 +1864,8 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   );
 };
 
-const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTargetId, onClearTarget }) => {
-  const [activeConversation, setActiveConversation] = useState(null);
+const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTargetId, onClearTarget, persistedConversation, onSetConversation }) => {
+  const [activeConversation, setActiveConversation] = useState(persistedConversation || null);
 
   useEffect(()=>{
     if(initialTargetId && currentUser?.id){
@@ -1849,11 +1894,12 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
       lastMessageAt: serverTimestamp(),
     },{ merge:true });
     setActiveConversation({id:convId,otherUserId});
+    onSetConversation?.({id:convId,otherUserId});
   };
 
   if(activeConversation){
     const otherUser = users.find(u=>u.id===activeConversation.otherUserId);
-    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>setActiveConversation(null)} showToast={showToast} onViewProfile={uid=>{setActiveConversation(null); onViewProfile?.(uid);}} />;
+    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>{ setActiveConversation(null); onSetConversation?.(null); }} showToast={showToast} onViewProfile={uid=>{ setActiveConversation(null); onSetConversation?.(null); onViewProfile?.(uid); }} />;
   }
 
   const convUsers = users.filter(u=>{
@@ -2467,7 +2513,90 @@ const AuthScreen = ({ onLogin }) => {
     </div>
   );
 };
+/* ─────────────── NOTIFICATIONS ─────────────── */
+const NotificationsPage = ({ currentUser, users, videos, onClose, onViewProfile }) => {
+  const [notifs, setNotifs] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
+  useEffect(()=>{
+    if(!currentUser?.id) return;
+    const q = query(
+      collection(db,'notifications'),
+      where('toUserId','==',currentUser.id),
+      orderBy('createdAt','desc')
+    );
+    const unsub = onSnapshot(q, snap=>{
+      const list = snap.docs.map(d=>({id:d.id,...d.data(),date:d.data().createdAt?.toDate?.()|| new Date()}));
+      setNotifs(list);
+      setUnreadCount(list.filter(n=>!n.read).length);
+    });
+    return ()=>unsub();
+  },[currentUser?.id]);
+
+  const markAllRead = async () => {
+    const unread = notifs.filter(n=>!n.read);
+    await Promise.all(unread.map(n=>updateDoc(doc(db,'notifications',n.id),{read:true})));
+  };
+
+  const icons = { like:'❤️', comment:'💬', follow:'👤', mention:'@', gift:'🎁', live:'🔴', story:'📖' };
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'#0a0a0a', zIndex:300, display:'flex', flexDirection:'column' }}>
+      <div style={{ padding:'16px 16px 12px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div style={{ color:'white', fontWeight:800, fontSize:20, fontFamily:"'Syne',sans-serif" }}>Notifications</div>
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          {unreadCount>0 && <button onClick={markAllRead} style={{ background:'rgba(255,45,85,0.1)', border:'1px solid rgba(255,45,85,0.2)', borderRadius:20, padding:'5px 12px', color:'#ff2d55', fontSize:11, fontWeight:700, cursor:'pointer' }}>Mark all read</button>}
+          <button onClick={onClose} style={{ background:'rgba(255,255,255,0.07)', border:'none', borderRadius:'50%', width:32, height:32, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
+        </div>
+      </div>
+      <div style={{ flex:1, overflowY:'auto' }}>
+        {notifs.length===0 && (
+          <div style={{ textAlign:'center', padding:60, color:'rgba(255,255,255,0.2)' }}>
+            <div style={{ fontSize:44, marginBottom:12 }}>🔔</div>
+            <div style={{ fontSize:14 }}>No notifications yet</div>
+          </div>
+        )}
+        {notifs.map(n=>{
+          const fromUser = users.find(u=>u.id===n.fromUserId);
+          return (
+            <div key={n.id} onClick={async()=>{ await updateDoc(doc(db,'notifications',n.id),{read:true}); onViewProfile?.(n.fromUserId); }} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,0.04)', cursor:'pointer', background:n.read?'transparent':'rgba(255,45,85,0.04)' }}>
+              <div style={{ position:'relative', flexShrink:0 }}>
+                <div style={{ width:46, height:46, borderRadius:'50%', background:fromUser?.avatarColor||'#333', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:18, overflow:'hidden' }}>
+                  {fromUser?.avatarUrl ? <img src={fromUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : (fromUser?.avatar||'?')}
+                </div>
+                <div style={{ position:'absolute', bottom:-2, right:-2, width:20, height:20, borderRadius:'50%', background:'#1a1a1a', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>{icons[n.type]||'🔔'}</div>
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ color:'white', fontSize:13, lineHeight:1.4 }}>
+                  <span style={{ fontWeight:700 }}>@{fromUser?.username||'someone'}</span>
+                  {' '}{n.message}
+                </div>
+                <div style={{ color:'rgba(255,255,255,0.3)', fontSize:11, marginTop:3 }}>
+                  {n.date?.toLocaleDateString?.()}{n.date ? ' · ' : ''}{n.date?.toLocaleTimeString?.([],{hour:'2-digit',minute:'2-digit'})}
+                </div>
+              </div>
+              {!n.read && <div style={{ width:8, height:8, borderRadius:'50%', background:'#ff2d55', flexShrink:0 }} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/* Helper to send a notification */
+const sendNotification = async (toUserId, fromUserId, type, message, extraData={}) => {
+  if(toUserId === fromUserId) return;
+  await addDoc(collection(db,'notifications'),{
+    toUserId,
+    fromUserId,
+    type,
+    message,
+    read: false,
+    createdAt: serverTimestamp(),
+    ...extraData,
+  });
+};
 /* ─────────────── MAIN APP ─────────────── */
 export default function DaguV3App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -2484,6 +2613,7 @@ export default function DaguV3App() {
   const [showStoryViewer, setShowStoryViewer] = useState(null);
   const [showSoundLibrary, setShowSoundLibrary] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showCreateStory, setShowCreateStory] = useState(false);
   const [followed, setFollowed] = useState([]);
@@ -2555,11 +2685,16 @@ export default function DaguV3App() {
     await updateDoc(doc(db,'users',uid),{
       followers: isFollowing ? arrayRemove(currentUser.id) : arrayUnion(currentUser.id)
     });
+    if(!isFollowing) await sendNotification(uid, currentUser.id, 'follow', 'started following you');
   };
 
   const handleViewProfile = uid => { const user=users.find(u=>u.id===uid); if(user) setViewingProfile(user); };
   const [inboxTargetId, setInboxTargetId] = useState(null);
-const handleMessage = uid => { setInboxTargetId(uid); setActiveTab('inbox'); };
+const [activeConversation, setActiveConversation] = useState(null);
+const handleMessage = uid => { 
+  setInboxTargetId(uid); 
+  setActiveTab('inbox'); 
+};
 
   const tabs = [
     {id:'home'},{id:'friends'},{id:'create'},{id:'inbox'},{id:'profile'},
@@ -2627,6 +2762,7 @@ const handleMessage = uid => { setInboxTargetId(uid); setActiveTab('inbox'); };
       {showStoryViewer && <StoryViewer story={showStoryViewer} user={users.find(u=>u.id===showStoryViewer.userId)||currentUser} onClose={()=>setShowStoryViewer(null)} />}
       {showSoundLibrary && <SoundLibraryPage onSelectSound={s=>{showToast?.(`Selected: ${s.name}`,'success'); setShowSoundLibrary(false);}} onClose={()=>setShowSoundLibrary(false)} />}
       {showQRCode && <QRCodePage user={currentUser} onClose={()=>setShowQRCode(false)} />}
+      {showNotifications && <NotificationsPage currentUser={currentUser} users={users} videos={videos} onClose={()=>setShowNotifications(false)} onViewProfile={uid=>{handleViewProfile(uid); setShowNotifications(false);}} />}
       {showAnalytics && <CreatorAnalytics user={currentUser} videos={videos} onClose={()=>setShowAnalytics(false)} />}
       {showCreateStory && <CreateStoryModal currentUser={currentUser} onClose={()=>setShowCreateStory(false)} showToast={showToast} />}
       {viewingProfile && (
@@ -2638,10 +2774,10 @@ const handleMessage = uid => { setInboxTargetId(uid); setActiveTab('inbox'); };
         {showCamera && <CameraUpload onUpload={v=>{setVideos(prev=>[v,...prev]);}} onClose={()=>setShowCamera(false)} showToast={showToast} currentUser={currentUser} />}
         {!showSearch && !showCamera && (
           <>
-            {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} />}
+            {{activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} />}
             {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
-            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} />}
+            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={setActiveConversation} />}
             {activeTab==='profile' && <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} users={users} showToast={showToast} onShowAnalytics={()=>setShowAnalytics(true)} onShowQRCode={()=>setShowQRCode(true)} allVideos={videos} />}
           </>
         )}
