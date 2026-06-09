@@ -2461,7 +2461,11 @@ const AuthScreen = ({ onLogin }) => {
         onLogin({...profile, id:fbUser.uid});
       }
     }).catch(e=>{
-      setError(e.message.replace('Firebase: ','').replace(/\(auth.*\)/,''));
+      // Only show error if it's not the "no redirect" case
+      const msg = e.message || '';
+      if(!msg.includes('no-auth-event') && !msg.includes('redirect') && !msg.includes('cancelled')){
+        setError(msg.replace('Firebase: ','').replace(/\(auth.*\)/,''));
+      }
     }).finally(()=>setLoading(false));
   },[]);
 
