@@ -2036,35 +2036,218 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
   );
 };
 
-/* ─────────────── CALL MODAL ─────────────── */
-const CallModal = ({ type, contactName, contactAvatar, onClose }) => {
+/* ─────────────── CALL MODAL (REAL WebRTC) ─────────────── */
+const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, onClose }) => {
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState('calling');
   const [isMuted, setIsMuted] = useState(false);
-  useEffect(()=>{const t=setTimeout(()=>setStatus('connected'),2000); return ()=>clearTimeout(t);},[]);
-  useEffect(()=>{if(status!=='connected') return; const i=setInterval(()=>setDuration(d=>d+1),1000); return ()=>clearInterval(i);},[status]);
-  const fmt=()=>{const m=Math.floor(duration/60),s=duration%60; return `${m}:${s.toString().padStart(2,'0')}`;};
+  const [isCamOff, setIsCamOff] = useState(false);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const pcRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const callDocId = useRef([[currentUser?.id, contactId].sort().join('_'), Date.now()].join('_'));
+
+  useEffect(() => {
+    let unsubAnswer = ()=>{};
+    let unsubCandidates = ()=>{};
+
+    const startCall = async () => {
+      try {
+        // Get local media
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: type === 'video',
+        });
+        localStreamRef.current = stream;
+        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+        // Create peer connection using Google STUN servers
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+          ],
+        });
+        pcRef.current = pc;
+
+        // Add local tracks
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        // When we get remote stream
+        pc.ontrack = (e) => {
+          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
+          setStatus('connected');
+        };
+
+        // Save ICE candidates to Firestore
+        pc.onicecandidate = async (e) => {
+          if (e.candidate) {
+            await addDoc(
+              collection(db, 'calls', callDocId.current, 'callerCandidates'),
+              e.candidate.toJSON()
+            );
+          }
+        };
+
+        // Create offer
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Save offer to Firestore
+        await setDoc(doc(db, 'calls', callDocId.current), {
+          offer: { type: offer.type, sdp: offer.sdp },
+          callType: type,
+          callerId: currentUser?.id,
+          callerName: currentUser?.username,
+          calleeId: contactId,
+          calleeName: contactName,
+          status: 'ringing',
+          createdAt: serverTimestamp(),
+        });
+
+        // Send notification to callee
+        await sendNotification(contactId, currentUser?.id, 'call',
+          `is ${type === 'video' ? 'video' : 'voice'} calling you`,
+          { callId: callDocId.current, callType: type }
+        );
+
+        // Listen for answer
+        unsubAnswer = onSnapshot(doc(db, 'calls', callDocId.current), async (snap) => {
+          const data = snap.data();
+          if (data?.answer && !pc.currentRemoteDescription) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            setStatus('connected');
+          }
+          if (data?.status === 'declined') {
+            setStatus('declined');
+            setTimeout(onClose, 1500);
+          }
+        });
+
+        // Listen for callee ICE candidates
+        unsubCandidates = onSnapshot(
+          collection(db, 'calls', callDocId.current, 'calleeCandidates'),
+          (snap) => {
+            snap.docChanges().forEach(async (change) => {
+              if (change.type === 'added') {
+                await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+              }
+            });
+          }
+        );
+      } catch (e) {
+        console.error('Call error:', e);
+        setStatus('failed');
+        setTimeout(onClose, 1500);
+      }
+    };
+
+    startCall();
+
+    return () => {
+      unsubAnswer();
+      unsubCandidates();
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+      pcRef.current?.close();
+      // Mark call as ended in Firestore
+      updateDoc(doc(db, 'calls', callDocId.current), { status: 'ended' }).catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const i = setInterval(() => setDuration(d => d + 1), 1000);
+    return () => clearInterval(i);
+  }, [status]);
+
+  const fmt = () => {
+    const m = Math.floor(duration / 60), s = duration % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const toggleMute = () => {
+    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    setIsMuted(v => !v);
+  };
+
+  const toggleCam = () => {
+    localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+    setIsCamOff(v => !v);
+  };
+
+  const statusLabel = {
+    calling: type === 'video' ? 'Video calling...' : 'Calling...',
+    connected: `Connected · ${fmt()}`,
+    declined: 'Call declined',
+    failed: 'Call failed',
+  }[status] || 'Connecting...';
+
   return (
-    <div style={{ position:'fixed', inset:0, background:'linear-gradient(160deg,#0a0a1a,#1a0a0a)', zIndex:2500, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 30%,rgba(255,45,85,0.2),transparent 60%)' }} />
-      <div style={{ textAlign:'center', marginBottom:60, zIndex:1 }}>
-        <div style={{ width:110, height:110, borderRadius:'50%', padding:3, background:'conic-gradient(#ff2d55,#af52de,#ff2d55)', margin:'0 auto 20px', animation:'storyRing 4s linear infinite' }}>
-          <div style={{ width:'100%', height:'100%', borderRadius:'50%', background:'#1a0a0a', padding:2, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <div style={{ width:'100%', height:'100%', borderRadius:'50%', background:'#ff2d55', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:42 }}>{contactAvatar||'?'}</div>
+    <div style={{ position:'fixed', inset:0, background:'#0a0a0a', zIndex:2500, display:'flex', flexDirection:'column' }}>
+      {/* Remote video (full screen) */}
+      {type === 'video' && (
+        <video ref={remoteVideoRef} autoPlay playsInline style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', background:'#111' }} />
+      )}
+
+      {/* Dark overlay when no remote video yet */}
+      {status !== 'connected' && (
+        <div style={{ position:'absolute', inset:0, background:'linear-gradient(160deg,#0a0a1a,#1a0a0a)', zIndex:1 }}>
+          <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 30%,rgba(255,45,85,0.2),transparent 60%)' }} />
+        </div>
+      )}
+
+      {/* Local video (PiP) */}
+      {type === 'video' && (
+        <video ref={localVideoRef} autoPlay playsInline muted style={{ position:'absolute', top:60, right:16, width:100, height:140, objectFit:'cover', borderRadius:16, border:'2px solid rgba(255,255,255,0.2)', zIndex:10, background:'#222' }} />
+      )}
+
+      {/* Contact info */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:20, padding:'56px 20px 20px', textAlign:'center' }}>
+        {type !== 'video' && (
+          <div style={{ width:110, height:110, borderRadius:'50%', padding:3, background:'conic-gradient(#ff2d55,#af52de,#ff2d55)', margin:'0 auto 20px', animation:status==='calling'?'storyRing 4s linear infinite':'' }}>
+            <div style={{ width:'100%', height:'100%', borderRadius:'50%', background:'#1a0a0a', padding:2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <div style={{ width:'100%', height:'100%', borderRadius:'50%', background:'#ff2d55', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:42 }}>
+                {contactAvatar || '?'}
+              </div>
+            </div>
           </div>
-        </div>
-        <div style={{ color:'white', fontSize:24, fontWeight:800, fontFamily:"'Syne',sans-serif" }}>@{contactName}</div>
-        <div style={{ color:'rgba(255,255,255,0.4)', fontSize:14, marginTop:10 }}>
-          {status==='calling'?(type==='video'?'Video calling...':'Calling...'):`Connected · ${fmt()}`}
-        </div>
+        )}
+        <div style={{ color:'white', fontSize:22, fontWeight:800, fontFamily:"'Syne',sans-serif" }}>@{contactName}</div>
+        <div style={{ color:'rgba(255,255,255,0.5)', fontSize:13, marginTop:6 }}>{statusLabel}</div>
       </div>
-      <div style={{ display:'flex', gap:24, zIndex:1 }}>
-        {status==='connected' && <button onClick={()=>setIsMuted(!isMuted)} style={{ background:isMuted?'rgba(255,255,255,0.15)':'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:60, height:60, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={isMuted?'#ff2d55':'white'} strokeWidth="2">{isMuted?<><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>:<><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>}</svg>
-        </button>}
-        <button onClick={onClose} style={{ background:'#ff2d55', border:'none', borderRadius:'50%', width:68, height:68, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', boxShadow:'0 0 30px rgba(255,45,85,0.5)' }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67m-2.67-3.34a19.79 19.79 0 01-3.07-8.63A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+
+      {/* Controls */}
+      <div style={{ position:'absolute', bottom:60, left:0, right:0, zIndex:20, display:'flex', justifyContent:'center', gap:20 }}>
+        {/* Mute */}
+        <button onClick={toggleMute} style={{ background:isMuted?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.12)', border:'none', borderRadius:'50%', width:60, height:60, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            {isMuted
+              ? <><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6"/><path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>
+              : <><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>
+            }
+          </svg>
         </button>
+
+        {/* Hang up */}
+        <button onClick={onClose} style={{ background:'#ff2d55', border:'none', borderRadius:'50%', width:70, height:70, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', boxShadow:'0 0 30px rgba(255,45,85,0.5)' }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+            <path d="M10.68 13.31a16 16 0 003.41 2.6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7 2 2 0 011.72 2v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.42 19.42 0 01-3.33-2.67m-2.67-3.34a19.79 19.79 0 01-3.07-8.63A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91"/>
+            <line x1="23" y1="1" x2="1" y2="23"/>
+          </svg>
+        </button>
+
+        {/* Camera toggle (video only) */}
+        {type === 'video' && (
+          <button onClick={toggleCam} style={{ background:isCamOff?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.12)', border:'none', borderRadius:'50%', width:60, height:60, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              {isCamOff
+                ? <><line x1="1" y1="1" x2="23" y2="23"/><path d="M21 21H3a2 2 0 01-2-2V8a2 2 0 012-2h3m3-3h6l2 3h4a2 2 0 012 2v9.34m-7.72-2.06a4 4 0 11-5.56-5.56"/></>
+                : <><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></>
+              }
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2735,7 +2918,7 @@ export default function DaguV3App() {
   const [toast, setToast] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-  const [showCall, setShowCall] = useState(null);
+  const [showCall, setShowCall] = useState(null); // { type, contactName, contactAvatar, contactId }
   const [showLiveStream, setShowLiveStream] = useState(null);
   const [showStoryViewer, setShowStoryViewer] = useState(null);
   const [showSoundLibrary, setShowSoundLibrary] = useState(false);
@@ -2901,7 +3084,7 @@ const handleMessage = uid => {
     <div style={{ maxWidth:430, margin:'0 auto', height:'100dvh', background:'#0a0a0a', display:'flex', flexDirection:'column', position:'relative', overflow:'hidden' }}>
       <GlobalStyles />
 
-      {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} onClose={()=>setShowCall(null)} />}
+      {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} contactId={showCall.contactId} currentUser={currentUser} onClose={()=>setShowCall(null)} />}
       {showLiveStream && <LiveStream streamer={showLiveStream} onClose={()=>setShowLiveStream(null)} showToast={showToast} currentUser={currentUser} />}
       {showStoryViewer && <StoryViewer story={showStoryViewer} user={users.find(u=>u.id===showStoryViewer.userId)||currentUser} onClose={()=>setShowStoryViewer(null)} />}
       {showSoundLibrary && <SoundLibraryPage onSelectSound={s=>{showToast?.(`Selected: ${s.name}`,'success'); setShowSoundLibrary(false);}} onClose={()=>setShowSoundLibrary(false)} />}
@@ -2918,8 +3101,12 @@ const handleMessage = uid => {
         {showCamera && <CameraUpload onUpload={v=>{setVideos(prev=>[v,...prev]);}} onClose={()=>setShowCamera(false)} showToast={showToast} currentUser={currentUser} />}
         {!showSearch && !showCamera && (
           <>
-            {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} />}
-            {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar});}} onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar});}} onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
+            {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+ onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+ onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} />}
+            {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+ onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+ onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
             {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={(conv)=>{ setActiveConversation(conv); sessionStorage.setItem('dagu_conv', JSON.stringify(conv)); }} />}
             {activeTab==='profile' && <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} users={users} showToast={showToast} onShowAnalytics={()=>setShowAnalytics(true)} onShowQRCode={()=>setShowQRCode(true)} allVideos={videos} />}
