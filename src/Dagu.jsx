@@ -1488,6 +1488,32 @@ const PrivacyToggles = ({ user, showToast }) => {
     </div>
   );
 };
+<div onClick={async()=>{
+            if(window.confirm('Reset account? This will delete all your posts, comments and likes but keep your account.')){
+              try {
+                // Delete all user videos
+                const vSnap = await getDocs(query(collection(db,'videos'),where('userId','==',user.id)));
+                await Promise.all(vSnap.docs.map(d=>deleteDoc(doc(db,'videos',d.id))));
+                // Delete all user comments
+                const cSnap = await getDocs(query(collection(db,'comments'),where('userId','==',user.id)));
+                await Promise.all(cSnap.docs.map(d=>deleteDoc(doc(db,'comments',d.id))));
+                // Delete all user likes
+                const lSnap = await getDocs(collection(db,'likes'));
+                await Promise.all(lSnap.docs.filter(d=>d.id.includes(user.id)).map(d=>deleteDoc(doc(db,'likes',d.id))));
+                // Reset profile stats
+                await updateDoc(doc(db,'users',user.id),{
+                  followers:[], following:[], coins:500, walletBalance:500, streak:1
+                });
+                setCurrentUser(u=>({...u,followers:[],following:[],coins:500,walletBalance:500,streak:1}));
+                showToast?.('Account reset successfully','success');
+              } catch(e){
+                showToast?.('Reset failed: '+e.message,'error');
+              }
+            }
+          }} style={{ padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,0.05)', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+            <span style={{ color:'#ff9500', fontSize:14 }}>Reset Account</span>
+          </div>
 /* ─────────────── PROFILE PAGE ─────────────── */
 const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowAnalytics, onShowQRCode, allVideos }) => {
   const [activeSubPage, setActiveSubPage] = useState(null);
@@ -1582,7 +1608,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
       </button>
       <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:20, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>Switch Account</div>
-      {users.map(u=>(
+      {JSON.parse(localStorage.getItem('dagu_accounts')||'[]').map(u=>(
         <div key={u.id} style={{ background:'rgba(255,255,255,0.03)', borderRadius:18, padding:16, marginBottom:10, display:'flex', alignItems:'center', gap:14, cursor: u.id===user?.id?'default':'not-allowed', border:u.id===user?.id?'1px solid rgba(255,45,85,0.5)':'1px solid rgba(255,255,255,0.06)', opacity: u.id===user?.id?1:0.4 }} onClick={()=>{ if(u.id!==user?.id){ showToast?.('Sign in to switch accounts','info'); return; } }}>
           <div style={{ width:50, height:50, borderRadius:'50%', background:u.avatarColor, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:20, overflow:'hidden' }}>
             {u.avatarUrl ? <img src={u.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : u.avatar}
@@ -2693,6 +2719,10 @@ const AuthScreen = ({ onLogin }) => {
   const [step, setStep] = useState('method');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [pendingOtp, setPendingOtp] = useState('');
+  const [pendingCreds, setPendingCreds] = useState(null);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpExpiry] = useState(()=>Date.now() + 10*60*1000);
 
   const handleGoogleLogin = async () => {
     setLoading(true); setError('');
@@ -2756,11 +2786,15 @@ if(!result.user.emailVerified){
       const emailSnap = await getDocs(query(collection(db,'users'), where('email','==',identifier)));
       if(!emailSnap.empty){ setError('An account with this email already exists. Please sign in.'); setLoading(false); return; }
 
-      const result = await createUserWithEmailAndPassword(auth, identifier, password);
-      await createUserProfile(result.user.uid,{username, fullName, email:identifier});
-      await sendEmailVerification(result.user);
-      await signOut(auth);
-      setStep('verify');
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      await sendEmailJS({
+        to_email: identifier,
+        from_name: 'Dagu',
+        message: `Your Dagu verification code is: ${otp}\n\nExpires in 10 minutes.`,
+      });
+      setPendingOtp(otp);
+      setPendingCreds({ email: identifier, password, username, fullName });
+      setStep('otp');
       setLoading(false);
       return;
     }
@@ -2820,7 +2854,56 @@ if(!result.user.emailVerified){
       <div style={{ padding:'0 24px 40px', textAlign:'center', color:'rgba(255,255,255,0.2)', fontSize:11 }}>By continuing, you agree to our Terms of Service & Privacy Policy</div>
     </div>
   );
-
+if(step==='otp') return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'#0a0a0a'}}>
+      <div style={{textAlign:'center',maxWidth:300,width:'100%'}}>
+        <div style={{fontSize:64,marginBottom:16}}>📲</div>
+        <div style={{color:'white',fontWeight:800,fontSize:22,marginBottom:10,fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"}}>Enter OTP</div>
+        <div style={{color:'rgba(255,255,255,0.5)',fontSize:14,lineHeight:1.6,marginBottom:20}}>
+          We sent a 6-digit code to <strong style={{color:'white'}}>{pendingCreds?.email}</strong>
+        </div>
+        {error && <div style={{background:'rgba(255,45,85,0.1)',border:'1px solid rgba(255,45,85,0.3)',borderRadius:12,padding:'10px 14px',color:'#ff2d55',fontSize:12,marginBottom:12}}>{error}</div>}
+        <input
+          placeholder="000000"
+          value={otpInput}
+          onChange={e=>setOtpInput(e.target.value.replace(/\D/g,'').slice(0,6))}
+          style={{width:'100%',background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:14,padding:'16px',color:'white',marginBottom:12,outline:'none',fontSize:28,boxSizing:'border-box',textAlign:'center',letterSpacing:12,fontWeight:800}}
+          maxLength={6}
+        />
+        <button onClick={async()=>{
+          if(Date.now() > otpExpiry){ setError('OTP expired. Please sign up again.'); return; }
+          if(otpInput !== pendingOtp){ setError('Incorrect code. Try again.'); return; }
+          setLoading(true); setError('');
+          try {
+            const result = await createUserWithEmailAndPassword(auth, pendingCreds.email, pendingCreds.password);
+            await createUserProfile(result.user.uid,{username:pendingCreds.username, fullName:pendingCreds.fullName, email:pendingCreds.email});
+            const profile = await getUserProfile(result.user.uid);
+            onLogin({...profile, id:result.user.uid});
+          } catch(e){
+            setError(e.message?.replace('Firebase: ','').replace(/\(auth\/[^)]+\)\.?/g,'').trim()||'Signup failed.');
+          }
+          setLoading(false);
+        }} disabled={loading||otpInput.length!==6} style={{width:'100%',background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:24,padding:15,color:'white',fontWeight:700,cursor:'pointer',fontSize:15,marginBottom:12,opacity:(loading||otpInput.length!==6)?0.5:1,fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"}}>
+          {loading?'Verifying...':'Verify & Create Account'}
+        </button>
+        <button onClick={async()=>{
+          setLoading(true);
+          const otp = String(Math.floor(100000 + Math.random() * 900000));
+          await sendEmailJS({ to_email:pendingCreds.email, from_name:'Dagu', message:`Your new Dagu code: ${otp}` });
+          setPendingOtp(otp);
+          setOtpInput('');
+          setError('');
+          setLoading(false);
+        }} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',fontSize:13,cursor:'pointer',textDecoration:'underline',marginBottom:8}}>
+          Resend code
+        </button>
+        <br/>
+        <button onClick={()=>{setStep('credentials');setError('');setOtpInput('');}} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',fontSize:13,cursor:'pointer',textDecoration:'underline'}}>
+          Back
+        </button>
+      </div>
+    </div>
+  );
   if(step==='resetpw') return (
     <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'#0a0a0a'}}>
       <div style={{textAlign:'center',maxWidth:300,width:'100%'}}>
@@ -3061,6 +3144,13 @@ for(let i=0; i<5; i++){
   const handleLogin = (profile) => {
     setCurrentUser(profile);
     setFollowed(profile.following||[]);
+    // Save to local accounts list
+    const stored = JSON.parse(localStorage.getItem('dagu_accounts')||'[]');
+    const exists = stored.find(a=>a.id===profile.id);
+    if(!exists) {
+      stored.push({ id:profile.id, username:profile.username, avatar:profile.avatar, avatarColor:profile.avatarColor, avatarUrl:profile.avatarUrl, subscription:profile.subscription });
+      localStorage.setItem('dagu_accounts', JSON.stringify(stored));
+    }
     showToast(`Welcome back, @${profile.username}! 👋`,'success');
   };
 
