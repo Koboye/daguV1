@@ -1024,7 +1024,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
     onClick={e => e.stopPropagation()}
     onTouchStart={e => e.stopPropagation()}
     onTouchEnd={e => e.stopPropagation()}
-    style={{ position:'fixed', inset:0, background:'#0a0a0a', zIndex:500, display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease' }}>
+    style={{ position:'fixed', top:0, left:'50%', transform:'translateX(-50%)', width:'100%', maxWidth:430, height:'100%', background:'#0a0a0a', zIndex:9000, display:'flex', flexDirection:'column', animation:'slideUp 0.3s ease' }}>
           <div style={{ padding:'16px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <span style={{ color:'white', fontWeight:700, fontSize:16, fontFamily:"'Syne',sans-serif" }}>Comments</span>
             <button onClick={()=>setShowComments(false)} style={{ background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:32, height:32, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
@@ -1730,20 +1730,31 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const fileInputRef = useRef(null);
 
   useEffect(()=>{
-    if(!conversationId) return;
-    // Ensure parent doc exists before querying subcollection
-    setDoc(doc(db,'conversations',conversationId), {
-      participants: [currentUser.id, otherUser?.id].filter(Boolean),
-      lastMessageAt: serverTimestamp(),
-    }, { merge: true }).then(()=>{
-      const q = query(collection(db,'messages',conversationId,'msgs'), orderBy('createdAt','asc'));
-      const unsub = onSnapshot(q, snap=>{
-        setMessages(snap.docs.map(d=>({id:d.id,...d.data()})));
+    if(!conversationId || !currentUser?.id || !otherUser?.id) return;
+    let unsub = ()=>{};
+
+    const init = async () => {
+      // Make sure the conversation doc and subcollection exist
+      await setDoc(doc(db,'conversations', conversationId),{
+        participants: [currentUser.id, otherUser.id],
+        lastMessageAt: serverTimestamp(),
+      },{ merge: true });
+
+      // Now subscribe to messages
+      const q = query(
+        collection(db,'messages', conversationId,'msgs'),
+        orderBy('createdAt','asc')
+      );
+      unsub = onSnapshot(q, snap=>{
+        const msgs = snap.docs.map(d=>({id:d.id,...d.data()}));
+        setMessages(msgs);
         setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
       });
-      return unsub;
-    });
-  },[conversationId]);
+    };
+
+    init();
+    return ()=>unsub();
+  },[conversationId, currentUser?.id, otherUser?.id]);
 
   const startVoice = async () => {
     try {
@@ -1762,15 +1773,41 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 
   const handleSend = async () => {
-    if(!conversationId) return;
+    if(!conversationId || !currentUser?.id || !otherUser?.id) return;
     let mediaUrl=null, mediaType=null;
-    if(previewFile?.file){ try{ mediaUrl=await uploadToCloudinary(previewFile.file); mediaType=previewFile.type; }catch{ showToast?.('Upload failed','error'); return; } }
-    else if(audioBlob){ try{ mediaUrl=await uploadToCloudinary(audioBlob); mediaType='audio/webm'; }catch{ showToast?.('Upload failed','error'); return; } }
-    if(!text.trim()&&!mediaUrl) return;
-    const msg=text; setText('');
-    await addDoc(collection(db,'messages',conversationId,'msgs'),{ from:currentUser.id, to:otherUser.id, text:msg, mediaUrl, mediaType, createdAt:serverTimestamp() });
-    await setDoc(doc(db,'conversations',conversationId),{ participants:[currentUser.id,otherUser.id], lastMessage:mediaUrl?(mediaType?.startsWith('audio')?'🎙️ Voice message':'📎 Attachment'):msg, lastMessageAt:serverTimestamp(), [`unread_${otherUser.id}`]:increment(1) },{merge:true});
-    clearAttach();
+    if(previewFile?.file){ 
+      try{ mediaUrl=await uploadToCloudinary(previewFile.file); mediaType=previewFile.type; }
+      catch{ showToast?.('Upload failed','error'); return; } 
+    } else if(audioBlob){ 
+      try{ mediaUrl=await uploadToCloudinary(audioBlob); mediaType='audio/webm'; }
+      catch{ showToast?.('Upload failed','error'); return; } 
+    }
+    if(!text.trim() && !mediaUrl) return;
+    const msg = text; 
+    setText('');
+    try {
+      // Write message to subcollection
+      await addDoc(collection(db,'messages', conversationId,'msgs'),{ 
+        from: currentUser.id, 
+        to: otherUser.id, 
+        text: msg, 
+        mediaUrl: mediaUrl || null, 
+        mediaType: mediaType || null, 
+        createdAt: serverTimestamp() 
+      });
+      // Update conversation metadata
+      await setDoc(doc(db,'conversations', conversationId),{ 
+        participants: [currentUser.id, otherUser.id], 
+        lastMessage: mediaUrl ? (mediaType?.startsWith('audio') ? '🎙️ Voice message' : '📎 Attachment') : msg, 
+        lastMessageAt: serverTimestamp(), 
+        [`unread_${otherUser.id}`]: increment(1) 
+      },{ merge:true });
+      clearAttach();
+    } catch(e){
+      showToast?.('Failed to send: ' + e.message, 'error');
+      setText(msg); // restore text if failed
+    }
+  };
   };
 
   return (
