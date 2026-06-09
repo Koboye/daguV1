@@ -1499,32 +1499,7 @@ const PrivacyToggles = ({ user, showToast }) => {
     </div>
   );
 };
-<div onClick={async()=>{
-            if(window.confirm('Reset account? This will delete all your posts, comments and likes but keep your account.')){
-              try {
-                // Delete all user videos
-                const vSnap = await getDocs(query(collection(db,'videos'),where('userId','==',user.id)));
-                await Promise.all(vSnap.docs.map(d=>deleteDoc(doc(db,'videos',d.id))));
-                // Delete all user comments
-                const cSnap = await getDocs(query(collection(db,'comments'),where('userId','==',user.id)));
-                await Promise.all(cSnap.docs.map(d=>deleteDoc(doc(db,'comments',d.id))));
-                // Delete all user likes
-                const lSnap = await getDocs(collection(db,'likes'));
-                await Promise.all(lSnap.docs.filter(d=>d.id.includes(user.id)).map(d=>deleteDoc(doc(db,'likes',d.id))));
-                // Reset profile stats
-                await updateDoc(doc(db,'users',user.id),{
-                  followers:[], following:[], coins:500, walletBalance:500, streak:1
-                });
-                setCurrentUser(u=>({...u,followers:[],following:[],coins:500,walletBalance:500,streak:1}));
-                showToast?.('Account reset successfully','success');
-              } catch(e){
-                showToast?.('Reset failed: '+e.message,'error');
-              }
-            }
-          }} style={{ padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,0.05)', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-            <span style={{ color:'#ff9500', fontSize:14 }}>Reset Account</span>
-          </div>
+
 /* ─────────────── PROFILE PAGE ─────────────── */
 const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowAnalytics, onShowQRCode, allVideos }) => {
   const [activeSubPage, setActiveSubPage] = useState(null);
@@ -1579,6 +1554,32 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
             </div>
           ))}
         </div>
+        {/* RESET ACCOUNT — paste here */}
+<div onClick={async()=>{
+  if(window.confirm('Reset account? This will delete all your posts, comments and likes but keep your account.')){
+    try {
+      const vSnap = await getDocs(query(collection(db,'videos'),where('userId','==',user.id)));
+      await Promise.all(vSnap.docs.map(d=>deleteDoc(doc(db,'videos',d.id))));
+      const cSnap = await getDocs(query(collection(db,'comments'),where('userId','==',user.id)));
+      await Promise.all(cSnap.docs.map(d=>deleteDoc(doc(db,'comments',d.id))));
+      const lSnap = await getDocs(collection(db,'likes'));
+      await Promise.all(lSnap.docs.filter(d=>d.id.includes(user.id)).map(d=>deleteDoc(doc(db,'likes',d.id))));
+      await updateDoc(doc(db,'users',user.id),{
+        followers:[], following:[], coins:500, walletBalance:500, streak:1
+      });
+      setCurrentUser(u=>({...u,followers:[],following:[],coins:500,walletBalance:500,streak:1}));
+      showToast?.('Account reset successfully','success');
+    } catch(e){
+      showToast?.('Reset failed: '+e.message,'error');
+    }
+  }
+}} style={{ padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,0.05)', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+  <span style={{ color:'#ff9500', fontSize:14 }}>Reset Account</span>
+</div>
+
+{/* LOG OUT — already exists, keep it */}
+<div onClick={onLogout} style={{ padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,0.05)', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
           <div onClick={onLogout} style={{ padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,0.05)', display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             <span style={{ color:'#ff9500', fontSize:14 }}>Log Out</span>
