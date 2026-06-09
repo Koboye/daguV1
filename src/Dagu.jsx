@@ -1825,7 +1825,6 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
       setText(msg); // restore text if failed
     }
   };
-  };
 
   return (
     <div style={{height:'100%',display:'flex',flexDirection:'column',background:'#0a0a0a'}}>
