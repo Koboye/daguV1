@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, si
 /* ─────────────── FIREBASE CONFIG ─────────────── */
 const firebaseConfig = {
   apiKey: "AIzaSyD9jDk8gijMVAYrsFe4vpojI7GyZnkzGL8",
-  authDomain: "dagu-8348c.firebaseapp.com",
+  authDomain: "dagu-v1.vercel.app",
   projectId: "dagu-8348c",
   storageBucket: "dagu-8348c.firebasestorage.app",
   messagingSenderId: "259738670911",
@@ -746,19 +746,9 @@ const CommentItem = ({ comment, currentUser, onLike, onReply, onPin, onViewProfi
 };
 const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, showToast, videoId }) => {
   const [isRecording, setIsRecording] = useState(false);
-const [showEmoji, setShowEmoji] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
-  {showEmoji && (
-  <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'10px 12px',background:'rgba(255,255,255,0.04)',borderRadius:16,marginBottom:8}}>
-    {EMOJI_LIST.map(e=>(
-      <button key={e} onClick={()=>setCommentText(t=>t+e)}
-        style={{background:'none',border:'none',fontSize:22,cursor:'pointer',padding:2}}>
-        {e}
-      </button>
-    ))}
-  </div>
-)}
   const [previewFile, setPreviewFile] = useState(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -1738,12 +1728,18 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
 
   useEffect(()=>{
     if(!conversationId) return;
-    const q = query(collection(db,'messages',conversationId,'msgs'), orderBy('createdAt','asc'));
-    const unsub = onSnapshot(q, snap=>{
-      setMessages(snap.docs.map(d=>({id:d.id,...d.data()})));
-      setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
+    // Ensure parent doc exists before querying subcollection
+    setDoc(doc(db,'conversations',conversationId), {
+      participants: [currentUser.id, otherUser?.id].filter(Boolean),
+      lastMessageAt: serverTimestamp(),
+    }, { merge: true }).then(()=>{
+      const q = query(collection(db,'messages',conversationId,'msgs'), orderBy('createdAt','asc'));
+      const unsub = onSnapshot(q, snap=>{
+        setMessages(snap.docs.map(d=>({id:d.id,...d.data()})));
+        setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),100);
+      });
+      return unsub;
     });
-    return ()=>unsub();
   },[conversationId]);
 
   const startVoice = async () => {
@@ -2643,6 +2639,13 @@ export default function DaguV3App() {
   useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async (fbUser)=>{
       if(fbUser){
+        // Block unverified email users from entering the app
+        if(!fbUser.emailVerified && fbUser.providerData?.[0]?.providerId === 'password'){
+          await signOut(auth);
+          setCurrentUser(null);
+          setAuthLoading(false);
+          return;
+        }
         const profile = await getUserProfile(fbUser.uid);
         if(profile) {
           setCurrentUser({...profile, id:fbUser.uid});
