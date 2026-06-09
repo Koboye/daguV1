@@ -2465,7 +2465,8 @@ const AuthScreen = ({ onLogin }) => {
       await signInWithRedirect(auth, googleProvider);
       // Result is handled in useEffect below via getRedirectResult
     } catch(e){ 
-      setError(e.message.replace('Firebase: ','').replace(/\(auth.*\)/,''));
+      console.error('Google auth error:', e.code, e.message);
+      setError(e.message?.replace('Firebase: ','').replace(/\(auth\/[^)]+\)\.?/g,'').trim() || e.code || 'Google sign-in failed.');
       setLoading(false);
     }
   };
@@ -2506,12 +2507,19 @@ const AuthScreen = ({ onLogin }) => {
       return;
     }
   } catch(e){
-    const msg = e.message.replace('Firebase: ','').replace(/\(auth.*\)/,'');
-    // Make duplicate email error user-friendly
-    if(e.code === 'auth/email-already-in-use'){
+    console.error('Auth error:', e.code, e.message);
+    if (e.code === 'auth/operation-not-allowed') {
+      setError('Email sign-in is not enabled. Contact support.');
+    } else if (e.code === 'auth/email-already-in-use') {
       setError('This email is already registered. Please sign in instead.');
+    } else if (e.code === 'auth/weak-password') {
+      setError('Password must be at least 6 characters.');
+    } else if (e.code === 'auth/invalid-email') {
+      setError('Please enter a valid email address.');
+    } else if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+      setError('Incorrect email or password.');
     } else {
-      setError(msg);
+      setError(e.message?.replace('Firebase: ','').replace(/\(auth\/[^)]+\)\.?/g,'').trim() || e.code || 'Something went wrong.');
     }
   }
   setLoading(false);
