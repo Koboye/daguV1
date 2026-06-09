@@ -2537,8 +2537,8 @@ const AuthScreen = ({ onLogin }) => {
       <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'40px 24px 20px', position:'relative' }}>
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 30%,rgba(255,45,85,0.2),rgba(175,82,222,0.1),transparent 65%)' }} />
         <div style={{ position:'relative', textAlign:'center', marginBottom:40 }}>
-          <div style={{ width:80, height:80, borderRadius:24, background:'linear-gradient(135deg,#ff2d55,#af52de)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px', fontSize:40, boxShadow:'0 20px 60px rgba(255,45,85,0.4)' }}>🎬</div>
-          <h1 style={{ fontSize:52, fontWeight:800, background:'linear-gradient(135deg,#ff2d55,#af52de,#007aff)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', fontFamily:"'Syne',sans-serif", lineHeight:1 }}>Dagu</h1>
+          <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/uecikeywyljsh3ze4w2z.png" style={{ width:80, height:80, borderRadius:24, objectFit:'cover', margin:'0 auto 20px', display:'block', boxShadow:'0 20px 60px rgba(255,45,85,0.4)' }} />
+          <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/uecikeywyljsh3ze4w2z.png" style={{ height:52, objectFit:'contain', display:'block', margin:'0 auto' }} />
           <p style={{ color:'rgba(255,255,255,0.4)', fontSize:14, marginTop:10 }}>{isLogin?'Welcome back! 👋':'Join the community 🎉'}</p>
         </div>
         <div style={{ position:'relative', width:'100%', maxWidth:340 }}>
@@ -2837,7 +2837,7 @@ const handleMessage = uid => {
   if(authLoading) return (
     <div style={{ maxWidth:430, margin:'0 auto', height:'100dvh', background:'#0a0a0a', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:16 }}>
       <GlobalStyles />
-      <div style={{ width:64, height:64, borderRadius:20, background:'linear-gradient(135deg,#ff2d55,#af52de)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, boxShadow:'0 20px 60px rgba(255,45,85,0.4)' }}>🎬</div>
+      <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/uecikeywyljsh3ze4w2z.png" style={{ width:64, height:64, borderRadius:20, objectFit:'cover', boxShadow:'0 20px 60px rgba(255,45,85,0.4)' }} />
       <div style={{ width:32, height:32, border:'3px solid rgba(255,45,85,0.3)', borderTop:'3px solid #ff2d55', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
     </div>
   );
