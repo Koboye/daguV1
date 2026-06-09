@@ -852,6 +852,16 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
     const q = query(collection(db,'comments'), where('videoId','==',video.id), orderBy('createdAt','asc'));
     const unsub = onSnapshot(q, snap=>{
       setComments(snap.docs.map(d=>({id:d.id,...d.data(),time:d.data().createdAt?.toDate?.()?timeAgo(d.data().createdAt.toDate()):'now'})));
+    }, (error)=>{
+      console.error('Comments index error:', error);
+      // Fallback: fetch without orderBy if index missing
+      const q2 = query(collection(db,'comments'), where('videoId','==',video.id));
+      onSnapshot(q2, snap2=>{
+        const sorted = snap2.docs
+          .map(d=>({id:d.id,...d.data(),time:d.data().createdAt?.toDate?.()?timeAgo(d.data().createdAt.toDate()):'now'}))
+          .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+        setComments(sorted);
+      });
     });
     return ()=>unsub();
   },[video?.id, currentUser?.id]);
@@ -1935,18 +1945,24 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
   const [activeConversation, setActiveConversation] = useState(persistedConversation || null);
 
   useEffect(()=>{
-    if(initialTargetId && currentUser?.id){
-      openConversation(initialTargetId);
-      onClearTarget?.();
-    }
-  },[initialTargetId]);
-  const [conversations, setConversations] = useState([]);
-
-  useEffect(()=>{
     if(!currentUser?.id) return;
-    const q = query(collection(db,'conversations'), where('participants','array-contains',currentUser.id), orderBy('lastMessageAt','desc'));
+    const q = query(
+      collection(db,'conversations'),
+      where('participants','array-contains',currentUser.id),
+      orderBy('lastMessageAt','desc')
+    );
     const unsub = onSnapshot(q, snap=>{
       setConversations(snap.docs.map(d=>({id:d.id,...d.data()})));
+    }, (error)=>{
+      console.error('Conversations index error:', error);
+      // Fallback without orderBy
+      const q2 = query(collection(db,'conversations'), where('participants','array-contains',currentUser.id));
+      onSnapshot(q2, snap2=>{
+        const sorted = snap2.docs
+          .map(d=>({id:d.id,...d.data()}))
+          .sort((a,b)=>(b.lastMessageAt?.seconds||0)-(a.lastMessageAt?.seconds||0));
+        setConversations(sorted);
+      });
     });
     return ()=>unsub();
   },[currentUser?.id]);
@@ -1969,11 +1985,17 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
     return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>{ setActiveConversation(null); onSetConversation?.(null); }} showToast={showToast} onViewProfile={uid=>{ setActiveConversation(null); onSetConversation?.(null); onViewProfile?.(uid); }} />;
   }
 
-  const convUsers = users.filter(u=>{
-    if(u.id===currentUser?.id) return false;
-    const convId = getConversationId(currentUser.id, u.id);
-    return conversations.some(c=>c.id===convId);
-  });
+  const convUsers = useMemo(()=>
+    users.filter(u=>{
+      if(u.id===currentUser?.id) return false;
+      const convId = getConversationId(currentUser.id, u.id);
+      return conversations.some(c=>c.id===convId);
+    }).sort((a,b)=>{
+      const convA = conversations.find(c=>c.id===getConversationId(currentUser.id,a.id));
+      const convB = conversations.find(c=>c.id===getConversationId(currentUser.id,b.id));
+      return (convB?.lastMessageAt?.seconds||0)-(convA?.lastMessageAt?.seconds||0);
+    }),
+  [users, conversations, currentUser?.id]);
 
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#0a0a0a' }}>
