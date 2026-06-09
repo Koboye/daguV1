@@ -1282,29 +1282,41 @@ const WalletPage = ({ user, setCurrentUser, showToast, onBack }) => {
 
   const doDeposit = async () => {
     const n=parseInt(amount); if(!n||n<=0){showToast?.('Enter valid amount','error'); return;}
-    await addDoc(collection(db,'transactions'),{ userId:user.id, type:'credit', label:`Top-up ${n} coins`, amount:n, coins:true, createdAt:serverTimestamp() });
-    await updateDoc(doc(db,'users',user.id),{ coins:increment(n), walletBalance:increment(n) });
-    setCurrentUser(u=>({...u, coins:(u.coins||0)+n, walletBalance:(u.walletBalance||0)+n}));
-    showToast?.(`Added ${n} coins! 🎉`,'success');
-    setAmount('');
-  } catch(e) {
-    showToast?.('Transaction failed: '+e.message,'error');
+    try {
+      await addDoc(collection(db,'transactions'),{ userId:user.id, type:'credit', label:`Top-up ${n} coins`, amount:n, coins:true, createdAt:serverTimestamp() });
+      await updateDoc(doc(db,'users',user.id),{ coins:increment(n), walletBalance:increment(n) });
+      setCurrentUser(u=>({...u,coins:(u.coins||0)+n,walletBalance:(u.walletBalance||0)+n}));
+      showToast?.(`Added ${n} coins! 🎉`,'success');
+      setAmount('');
+    } catch(e) {
+      showToast?.('Transaction failed: '+e.message,'error');
+    }
   };
   const doWithdraw = async () => {
     const n=parseInt(amount); if(!n||n<=0){showToast?.('Enter valid amount','error'); return;}
     if((user?.coins||0)<n){showToast?.('Insufficient coins','error'); return;}
-    await addDoc(collection(db,'transactions'),{ userId:user.id, type:'debit', label:`Withdrew ${n} coins`, amount:n, coins:true, createdAt:serverTimestamp() });
-    await updateDoc(doc(db,'users',user.id),{ coins:increment(-n), walletBalance:increment(-n) });
-    setCurrentUser(u=>({...u,coins:(u.coins||0)-n,walletBalance:(u.walletBalance||0)-n}));
-    showToast?.(`Withdrew ${n} coins`,'success'); setAmount('');
+    try {
+      await addDoc(collection(db,'transactions'),{ userId:user.id, type:'debit', label:`Withdrew ${n} coins`, amount:n, coins:true, createdAt:serverTimestamp() });
+      await updateDoc(doc(db,'users',user.id),{ coins:increment(-n), walletBalance:increment(-n) });
+      setCurrentUser(u=>({...u,coins:(u.coins||0)-n,walletBalance:(u.walletBalance||0)-n}));
+      showToast?.(`Withdrew ${n} coins`,'success');
+      setAmount('');
+    } catch(e) {
+      showToast?.('Transaction failed: '+e.message,'error');
+    }
   };
   const convertCoins = async () => {
     const n=parseInt(amount); if(!n||n<=0||(user?.coins||0)<n){showToast?.('Insufficient coins','error'); return;}
     const eth=(n/10000).toFixed(4);
-    await addDoc(collection(db,'transactions'),{ userId:user.id, type:'debit', label:`Converted to ${eth} ETH`, amount:n, coins:true, createdAt:serverTimestamp() });
-    await updateDoc(doc(db,'users',user.id),{ coins:increment(-n) });
-    setCurrentUser(u=>({...u,coins:(u.coins||0)-n}));
-    showToast?.(`Converted to ${eth} ETH! ✨`,'success'); setAmount('');
+    try {
+      await addDoc(collection(db,'transactions'),{ userId:user.id, type:'debit', label:`Converted to ${eth} ETH`, amount:n, coins:true, createdAt:serverTimestamp() });
+      await updateDoc(doc(db,'users',user.id),{ coins:increment(-n) });
+      setCurrentUser(u=>({...u,coins:(u.coins||0)-n}));
+      showToast?.(`Converted to ${eth} ETH! ✨`,'success');
+      setAmount('');
+    } catch(e) {
+      showToast?.('Transaction failed: '+e.message,'error');
+    }
   };
 
   return (
