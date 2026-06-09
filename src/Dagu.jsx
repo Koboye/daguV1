@@ -2442,7 +2442,6 @@ const AuthScreen = ({ onLogin }) => {
 
   // Handle Google redirect result on page load
   useEffect(()=>{
-    setLoading(true);
     getRedirectResult(auth).then(async (result)=>{
       if(result?.user){
         const fbUser = result.user;
@@ -2463,8 +2462,8 @@ const AuthScreen = ({ onLogin }) => {
     }).catch(e=>{
       // Only show error if it's not the "no redirect" case
       const msg = e.message || '';
-      if(!msg.includes('no-auth-event') && !msg.includes('redirect') && !msg.includes('cancelled')){
-        setError(msg.replace('Firebase: ','').replace(/\(auth.*\)/,''));
+      if(msg && !msg.includes('no-auth-event') && !msg.includes('redirect') && !msg.includes('cancelled') && !msg.includes('auth/null-user')){
+        setError(msg.replace('Firebase: ','').replace(/\(auth.*\)/,'').trim());
       }
     }).finally(()=>setLoading(false));
   },[]);
@@ -2538,7 +2537,6 @@ const AuthScreen = ({ onLogin }) => {
         <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 30%,rgba(255,45,85,0.2),rgba(175,82,222,0.1),transparent 65%)' }} />
         <div style={{ position:'relative', textAlign:'center', marginBottom:40 }}>
           <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/uecikeywyljsh3ze4w2z.png" style={{ width:80, height:80, borderRadius:24, objectFit:'cover', margin:'0 auto 20px', display:'block', boxShadow:'0 20px 60px rgba(255,45,85,0.4)' }} />
-          <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/uecikeywyljsh3ze4w2z.png" style={{ height:52, objectFit:'contain', display:'block', margin:'0 auto' }} />
           <p style={{ color:'rgba(255,255,255,0.4)', fontSize:14, marginTop:10 }}>{isLogin?'Welcome back! 👋':'Join the community 🎉'}</p>
         </div>
         <div style={{ position:'relative', width:'100%', maxWidth:340 }}>
