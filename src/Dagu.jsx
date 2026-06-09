@@ -7,7 +7,7 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, si
 /* ─────────────── FIREBASE CONFIG ─────────────── */
 const firebaseConfig = {
   apiKey: "AIzaSyD9jDk8gijMVAYrsFe4vpojI7GyZnkzGL8",
-  authDomain: "dagu-v1.vercel.app",
+  authDomain: "dagu-8348c.firebaseapp.com",
   projectId: "dagu-8348c",
   storageBucket: "dagu-8348c.firebasestorage.app",
   messagingSenderId: "259738670911",
