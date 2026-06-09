@@ -2459,36 +2459,37 @@ const AuthScreen = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(()=>{
-    setError('');
-    getRedirectResult(auth).then(async (result)=>{
-      if(result?.user){
-        const fbUser = result.user;
-        let profile = await getUserProfile(fbUser.uid);
-        if(!profile){
-          const uname = (fbUser.displayName||fbUser.email||'user').split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g,'') + Math.floor(Math.random()*999);
-          await createUserProfile(fbUser.uid,{
-            username: uname,
-            fullName: fbUser.displayName||'',
-            email: fbUser.email||'',
-            avatarUrl: fbUser.photoURL||null,
-            avatarColor: `hsl(${Math.floor(Math.random()*360)},70%,60%)`,
-          });
-          profile = await getUserProfile(fbUser.uid);
-        }
-        if(profile) onLogin({...profile, id:fbUser.uid});
-      }
-    }).catch(()=>{}).finally(()=>setLoading(false));
-  },[]);
-
   const handleGoogleLogin = async () => {
     setLoading(true); setError('');
     try {
-      await signInWithRedirect(auth, googleProvider);
-      // Result is handled in useEffect below via getRedirectResult
+      const result = await signInWithPopup(auth, googleProvider);
+      const fbUser = result.user;
+      let profile = await getUserProfile(fbUser.uid);
+      if(!profile){
+        const uname = (fbUser.displayName||fbUser.email||'user')
+          .split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g,'') 
+          + Math.floor(Math.random()*999);
+        await createUserProfile(fbUser.uid,{
+          username: uname,
+          fullName: fbUser.displayName||'',
+          email: fbUser.email||'',
+          avatarUrl: fbUser.photoURL||null,
+          avatarColor: `hsl(${Math.floor(Math.random()*360)},70%,60%)`,
+        });
+        profile = await getUserProfile(fbUser.uid);
+      }
+      if(profile) onLogin({...profile, id:fbUser.uid});
     } catch(e){ 
       console.error('Google auth error:', e.code, e.message);
-      setError(e.message?.replace('Firebase: ','').replace(/\(auth\/[^)]+\)\.?/g,'').trim() || e.code || 'Google sign-in failed.');
+      if(e.code === 'auth/popup-blocked'){
+        setError('Popup was blocked. Please allow popups for this site.');
+      } else if(e.code === 'auth/popup-closed-by-user'){
+        setError('Sign-in was cancelled.');
+      } else if(e.code === 'auth/unauthorized-domain'){
+        setError('This domain is not authorized. Add it in Firebase Console.');
+      } else {
+        setError(e.message?.replace('Firebase: ','').replace(/\(auth\/[^)]+\)\.?/g,'').trim() || 'Google sign-in failed.');
+      }
       setLoading(false);
     }
   };
