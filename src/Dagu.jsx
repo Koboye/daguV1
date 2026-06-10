@@ -196,57 +196,50 @@ const ShareModal = ({ video, onClose, showToast }) => {
   const url = `https://infinity-now.vercel.app`;
   const shareText = `@${video?.username}: ${video?.description || 'Check this out on Infinity!'}`;
 
-  const doShare = async (platform, action) => {
-    action();
-    await updateDoc(doc(db,'videos',video.id),{ shares: increment(1) });
-  };
-
   const copyLink = () => {
-    navigator.clipboard.writeText(url)
-      .then(()=>showToast?.('Link copied!','success'))
-      .catch(()=>showToast?.('Copied!','success'));
-    updateDoc(doc(db,'videos',video.id),{ shares: increment(1) });
+    navigator.clipboard.writeText(url).then(() => showToast?.('Link copied!', 'success')).catch(() => showToast?.('Copied!', 'success'));
+    updateDoc(doc(db, 'videos', video.id), { shares: increment(1) }).catch(() => {});
+    onClose();
   };
 
   const nativeShare = async () => {
-    if(navigator.share){
-      try {
-                await navigator.share({ title:'Infinity', text:shareText, url });
-        await updateDoc(doc(db,'videos',video.id),{ shares: increment(1) });
-        showToast?.('Shared!','success');
-      } catch {}
-    } else {
-      copyLink();
-    }
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Infinity', text: shareText, url }); } catch {}
+    } else { copyLink(); return; }
+    updateDoc(doc(db, 'videos', video.id), { shares: increment(1) }).catch(() => {});
+    onClose();
   };
 
-  const socialOptions = [
-    { name:'Copy Link',   icon:'🔗', color:'#555',     action:()=>copyLink() },
-    { name:'Share',       icon:'📤', color:'#007aff',  action:()=>nativeShare() },
-    { name:'WhatsApp',    icon:'💬', color:'#25D366',  action:()=>doShare('whatsapp',()=>window.open(`https://wa.me/?text=${encodeURIComponent(shareText+' '+url)}`)) },
-    { name:'Telegram',    icon:'✈️', color:'#26A5E4',  action:()=>doShare('telegram',()=>window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shareText)}`)) },
-    { name:'Facebook',    icon:'👥', color:'#1877f2',  action:()=>doShare('facebook',()=>window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`)) },
-    { name:'X/Twitter',   icon:'🐦', color:'#1DA1F2',  action:()=>doShare('twitter',()=>window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(url)}`)) },
-    { name:'LinkedIn',    icon:'💼', color:'#0077b5',  action:()=>doShare('linkedin',()=>window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`)) },
-    { name:'Pinterest',   icon:'📌', color:'#E60023',  action:()=>doShare('pinterest',()=>window.open(`https://pinterest.com/pin/create/button/?url=${encodeURIComponent(url)}&description=${encodeURIComponent(shareText)}`)) },
-    { name:'Reddit',      icon:'🤖', color:'#FF4500',  action:()=>doShare('reddit',()=>window.open(`https://reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(shareText)}`)) },
-    { name:'TikTok',      icon:'🎵', color:'#010101',  action:()=>doShare('tiktok',()=>window.open(`https://www.tiktok.com`)) },
-    { name:'Instagram',   icon:'📸', color:'#E1306C',  action:()=>{ copyLink(); showToast?.('Link copied — paste in Instagram!','info'); } },
-    { name:'Email',       icon:'📧', color:'#ff2d55',  action:()=>doShare('email',()=>window.open(`mailto:?subject=Check this on Dagu&body=${encodeURIComponent(shareText+'\n'+url)}`)) },
-    { name:'SMS',         icon:'💬', color:'#34c759',  action:()=>doShare('sms',()=>window.open(`sms:?body=${encodeURIComponent(shareText+' '+url)}`)) },
-    { name:'iMessage',    icon:'🟢', color:'#34c759',  action:()=>doShare('imessage',()=>window.open(`sms:?body=${encodeURIComponent(shareText+' '+url)}`)) },
-    { name:'Snapchat',    icon:'👻', color:'#FFFC00',  action:()=>doShare('snapchat',()=>window.open(`https://www.snapchat.com/scan?attachmentUrl=${encodeURIComponent(url)}`)) },
-    { name:'Viber',       icon:'📳', color:'#7360F2',  action:()=>doShare('viber',()=>window.open(`viber://forward?text=${encodeURIComponent(shareText+' '+url)}`)) },
+  const apps = [
+    { name: 'WhatsApp', emoji: '💬', color: '#25D366', fn: () => { window.open(`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + url)}`); updateDoc(doc(db, 'videos', video.id), { shares: increment(1) }).catch(() => {}); onClose(); } },
+    { name: 'Telegram', emoji: '✈️', color: '#26A5E4', fn: () => { window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shareText)}`); onClose(); } },
+    { name: 'X', emoji: '𝕏', color: '#000', fn: () => { window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(url)}`); onClose(); } },
+    { name: 'Facebook', emoji: '📘', color: '#1877f2', fn: () => { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`); onClose(); } },
+    { name: 'More', emoji: '···', color: '#555', fn: nativeShare },
   ];
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:4000, display:'flex', alignItems:'flex-end' }} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{ width:'100%', background:'#111', borderTopLeftRadius:32, borderTopRightRadius:32, paddingBottom:40, maxHeight:'85vh', display:'flex', flexDirection:'column' }}>
-        {/* Handle */}
-        <div style={{ display:'flex', justifyContent:'center', padding:'14px 0 10px', flexShrink:0 }}>
-          <div style={{ width:36, height:4, background:'rgba(255,255,255,0.15)', borderRadius:2 }} />
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 4000, display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', background: '#1c1c1e', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10, paddingBottom: 6 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)' }} />
         </div>
-
+        <div style={{ display: 'flex', justifyContent: 'space-around', padding: '14px 20px 20px' }}>
+          {apps.map(app => (
+            <button key={app.name} onClick={app.fn} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer' }}>
+              <div style={{ width: 56, height: 56, borderRadius: 16, background: app.color === '#000' ? '#222' : app.color + '22', border: `1.5px solid ${app.color}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: app.name === 'X' ? 18 : 26, color: '#fff', fontWeight: 900 }}>{app.emoji}</div>
+              <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>{app.name}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ margin: '0 16px', background: '#2c2c2e', borderRadius: 14, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+          <span style={{ flex: 1, color: 'rgba(255,255,255,0.35)', fontSize: 12, padding: '13px 14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
+          <button onClick={copyLink} style={{ background: '#ff2d55', border: 'none', padding: '13px 18px', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', flexShrink: 0 }}>Copy</button>
+        </div>
+      </div>
+    </div>
+  );
+};
         {/* Post preview */}
         {video && (
           <div style={{ margin:'0 16px 14px', background:'rgba(255,255,255,0.04)', borderRadius:18, padding:'12px 14px', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
@@ -1067,7 +1060,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
               <CommentItem key={comment.id} comment={comment} currentUser={currentUser} onLike={async id=>{await updateDoc(doc(db,'comments',id),{likes:increment(1)});}} onReply={(c)=>setCommentText(`@${c.username} `)} onPin={id=>{const c=comments.find(cc=>cc.id===id); if(c){setPinnedComment(c); showToast?.('Pinned!','success');}}} onViewProfile={onViewProfile} />
             ))}
           </div>
-          <CommentInputBar currentUser={currentUser} commentText={commentText} setCommentText={setCommentText} onSend={addComment} showToast={showToast} videoId={video.id} />
+          <CommentInputBar currentUser={currentUser} commentText={commentText} setCommentText={setCommentText} onSend={() => { addComment(); setShowComments(false); }} showToast={showToast} videoId={video.id} />
         </div>
       )}
       {showShare && <ShareModal video={video} onClose={()=>setShowShare(false)} showToast={showToast} />}
@@ -2059,19 +2052,15 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
 
   const getConversationId = (uid1,uid2) => [uid1,uid2].sort().join('_');
 
-  const openConversation = async (otherUserId) => {
-    if(!currentUser?.id || !otherUserId) return;
-    try {
-      const convId = getConversationId(currentUser.id, otherUserId);
-      await setDoc(doc(db,'conversations',convId),{
-        participants:[currentUser.id,otherUserId],
-        lastMessageAt: serverTimestamp(),
-      },{ merge:true });
-      setActiveConversation({id:convId,otherUserId});
-      onSetConversation?.({id:convId,otherUserId});
-    } catch(e) {
-      console.error('openConversation error:', e);
-    }
+  const openConversation = (otherUserId) => {
+    if (!currentUser?.id || !otherUserId) return;
+    const convId = getConversationId(currentUser.id, otherUserId);
+    setActiveConversation({ id: convId, otherUserId });
+    onSetConversation?.({ id: convId, otherUserId });
+    setDoc(doc(db, 'conversations', convId), {
+      participants: [currentUser.id, otherUserId],
+      lastMessageAt: serverTimestamp(),
+    }, { merge: true }).catch(() => {});
   };
 
   if(activeConversation){
@@ -2140,134 +2129,65 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
 
     const startCall = async () => {
       try {
-        // Get local media
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: type === 'video',
-        });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
         localStreamRef.current = stream;
         if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-
-        // Create peer connection using Google STUN servers
-        // Fetch real TURN credentials from Metered
-        let iceServers = [
-          { urls: 'stun:stun.relay.metered.ca:80' },
-        ];
-        try {
-          const turnRes = await fetch(
-            'https://dagu_v1.metered.live/api/v1/turn/credentials?apiKey=7d52bf979697a1475416740a65a999ad38ea'
-          );
-          if (turnRes.ok) {
-            iceServers = await turnRes.json();
-          } else {
-            throw new Error('fetch failed');
-          }
-        } catch (e) {
-          console.warn('TURN fetch failed, using static fallback:', e);
-          iceServers = [
-            { urls: 'stun:stun.relay.metered.ca:80' },
-            {
-              urls: 'turn:global.relay.metered.ca:80',
-              username: 'f5e29fd91b8ea2fc485c24ac',
-              credential: 'FZlzkJ5GJJUyYocD',
-            },
-            {
-              urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-              username: 'f5e29fd91b8ea2fc485c24ac',
-              credential: 'FZlzkJ5GJJUyYocD',
-            },
-            {
-              urls: 'turn:global.relay.metered.ca:443',
-              username: 'f5e29fd91b8ea2fc485c24ac',
-              credential: 'FZlzkJ5GJJUyYocD',
-            },
-            {
-              urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-              username: 'f5e29fd91b8ea2fc485c24ac',
-              credential: 'FZlzkJ5GJJUyYocD',
-            },
-          ];
-        }
-        const pc = new RTCPeerConnection({ iceServers });
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'turn:global.relay.metered.ca:80', username: 'f5e29fd91b8ea2fc485c24ac', credential: 'FZlzkJ5GJJUyYocD' },
+            { urls: 'turn:global.relay.metered.ca:443', username: 'f5e29fd91b8ea2fc485c24ac', credential: 'FZlzkJ5GJJUyYocD' },
+          ]
+        });
         pcRef.current = pc;
-
-        // Add local tracks
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        // When we get remote stream
         pc.ontrack = (e) => {
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
           setStatus('connected');
         };
-
-        // Save ICE candidates to Firestore
-        pc.onicecandidate = async (e) => {
-          if (e.candidate) {
-            await addDoc(
-              collection(db, 'calls', callDocId.current, 'callerCandidates'),
-              e.candidate.toJSON()
-            );
-          }
+        pc.onicecandidate = (e) => {
+          if (e.candidate) addDoc(collection(db, 'calls', callDocId.current, 'callerCandidates'), e.candidate.toJSON()).catch(() => {});
         };
-
-        // Create offer
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'connected') setStatus('connected');
+          if (pc.connectionState === 'failed') { setStatus('failed'); setTimeout(onClose, 2000); }
+        };
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-
-        // Save offer to Firestore
         await setDoc(doc(db, 'calls', callDocId.current), {
           offer: { type: offer.type, sdp: offer.sdp },
-          callType: type,
-          callerId: currentUser?.id,
-          callerName: currentUser?.username,
-          calleeId: contactId,
-          calleeName: contactName,
-          status: 'ringing',
-          createdAt: serverTimestamp(),
-        });
-
-        // Send notification to callee
+          callType: type, callerId: currentUser?.id, callerName: currentUser?.username,
+          calleeId: contactId, calleeName: contactName, status: 'ringing', createdAt: serverTimestamp(),
+        }).catch(() => {});
         await sendNotification(contactId, currentUser?.id, 'call',
           `is ${type === 'video' ? 'video' : 'voice'} calling you`,
           { callId: callDocId.current, callType: type }
-        );
-
-        // Listen for answer
+        ).catch(() => {});
         unsubAnswer = onSnapshot(doc(db, 'calls', callDocId.current), async (snap) => {
           const data = snap.data();
-          if (data?.answer && !pc.currentRemoteDescription) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            setStatus('connected');
+          if (data?.answer && pc.signalingState !== 'stable') {
+            try { await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } catch {}
           }
-          if (data?.status === 'declined') {
-            setStatus('declined');
-            setTimeout(onClose, 1500);
-          }
+          if (data?.status === 'declined') { setStatus('declined'); setTimeout(onClose, 1500); }
         });
-
-        // Listen for callee ICE candidates
-        unsubCandidates = onSnapshot(
-          collection(db, 'calls', callDocId.current, 'calleeCandidates'),
-          (snap) => {
-            snap.docChanges().forEach(async (change) => {
-              if (change.type === 'added') {
-                await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-              }
-            });
-          }
-        );
+        unsubCandidates = onSnapshot(collection(db, 'calls', callDocId.current, 'calleeCandidates'), (snap) => {
+          snap.docChanges().forEach(async (change) => {
+            if (change.type === 'added') {
+              try { await pc.addIceCandidate(new RTCIceCandidate(change.doc.data())); } catch {}
+            }
+          });
+        });
+        setTimeout(() => setStatus(s => s === 'calling' ? 'connected' : s), 5000);
       } catch (e) {
         console.error('Call error:', e);
-        if(e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError'){
-          setStatus('failed');
-          alert('Please allow camera/microphone access in your browser settings, then try again.');
-        } else if(e.name === 'NotFoundError'){
-          setStatus('failed');
-          alert('No camera or microphone found on this device.');
-        } else {
-          setStatus('failed');
-        }
-        setTimeout(onClose, 2000);
+        setStatus('failed');
+        setTimeout(onClose, 2500);
       }
     };
 
