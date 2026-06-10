@@ -193,7 +193,7 @@ const Toast = ({ message, type, onClose }) => {
 
 /* ─────────────── SHARE MODAL ─────────────── */
 const ShareModal = ({ video, onClose, showToast }) => {
-  const url = `https://infinity-v1.vercel.app`;
+  const url = `https://infinity-now.vercel.app`;
   const shareText = `@${video?.username}: ${video?.description || 'Check this out on Infinity!'}`;
 
   const doShare = async (platform, action) => {
