@@ -1848,10 +1848,7 @@ if(activeSubPage==='settings') return (
           <span style={{position:'relative',color:'white',fontSize:16,fontWeight:700}}>@{user?.username}</span>
           <span style={{position:'relative',color:'rgba(255,255,255,0.4)',fontSize:12}}>Tap anywhere to close</span>
         </div>
-      )}
-    </div>
-    </div>
-    </div>
+      </div>
     </div>
   );
 };
