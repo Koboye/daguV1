@@ -2801,7 +2801,7 @@ const AuthScreen = ({ onLogin }) => {
   const [pendingOtp, setPendingOtp] = useState('');
   const [pendingCreds, setPendingCreds] = useState(null);
   const [otpInput, setOtpInput] = useState('');
-  const [otpExpiry] = useState(()=>Date.now() + 10*60*1000);
+  const [otpExpiry, setOtpExpiry] = useState(()=>Date.now() + 10*60*1000);
 
   const handleGoogleLogin = async () => {
     setLoading(true); setError('');
@@ -2880,13 +2880,14 @@ if(!result.user.emailVerified){
 await sendEmailJS({
   to_email: identifier,
   from_name: 'Infinity',
-  message: `Your Infinity verification code is: ${otp}\n\nExpires in 3 minutes.`,
+  message: `Your Infinity verification code is: ${otp}\n\nExpires in 10 minutes.`,
   otp_code: otp,
   code: otp,
 });
       setPendingOtp(otp);
-      setPendingCreds({ email: identifier, password, username, fullName });
-      setStep('otp');
+setPendingCreds({ email: identifier, password, username, fullName });
+setOtpExpiry(Date.now() + 10*60*1000);
+setStep('otp');
       setLoading(false);
       return;
     }
@@ -2975,9 +2976,24 @@ if(step==='otp') return (
           setLoading(true); setError('');
           try {
             const result = await createUserWithEmailAndPassword(auth, pendingCreds.email, pendingCreds.password);
-            await createUserProfile(result.user.uid,{username:pendingCreds.username, fullName:pendingCreds.fullName, email:pendingCreds.email});
-            const profile = await getUserProfile(result.user.uid);
-            onLogin({...profile, id:result.user.uid});
+await createUserProfile(result.user.uid, {
+  username: pendingCreds.username, 
+  fullName: pendingCreds.fullName, 
+  email: pendingCreds.email
+});
+let profile = null;
+for(let i = 0; i < 5; i++){
+  profile = await getUserProfile(result.user.uid);
+  if(profile) break;
+  await new Promise(r => setTimeout(r, 800));
+}
+if(profile) {
+  onLogin({...profile, id: result.user.uid});
+} else {
+  setError('Account created! Please sign in.');
+  setStep('method');
+  setIsLogin(true);
+}
           } catch(e){
             setError(e.message?.replace('Firebase: ','').replace(/\(auth\/[^)]+\)\.?/g,'').trim()||'Signup failed.');
           }
@@ -2996,9 +3012,10 @@ if(step==='otp') return (
     code: otp,
   });
   setPendingOtp(otp);
-  setOtpInput('');
-  setError('');
-  setLoading(false);
+setOtpExpiry(Date.now() + 10*60*1000);
+setOtpInput('');
+setError('');
+setLoading(false);
 }} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',fontSize:13,cursor:'pointer',textDecoration:'underline',marginBottom:8}}>
           Resend code
         </button>
