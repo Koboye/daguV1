@@ -215,7 +215,7 @@ const ShareModal = ({ video, onClose, showToast }) => {
     { name: 'Telegram', emoji: '✈️', color: '#26A5E4', fn: () => { window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shareText)}`); onClose(); } },
     { name: 'X', emoji: 'X', color: '#000', fn: () => { window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(url)}`); onClose(); } },
     { name: 'Facebook', emoji: '📘', color: '#1877f2', fn: () => { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`); onClose(); } },
-    { name: 'More', emoji: '···', color: '#555', fn: nativeShare },
+    { name: 'More', emoji: '...', color: '#555', fn: nativeShare },
   ];
 
   return (
