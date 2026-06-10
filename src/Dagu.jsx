@@ -1979,7 +1979,13 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
     if(initialTargetId && currentUser?.id){
       const tid = initialTargetId;
       onClearTarget?.();
-      setTimeout(()=>openConversation(tid), 100);
+      const convId = [currentUser.id, tid].sort().join('_');
+      setActiveConversation({ id: convId, otherUserId: tid });
+      onSetConversation?.({ id: convId, otherUserId: tid });
+      setDoc(doc(db, 'conversations', convId), {
+        participants: [currentUser.id, tid],
+        lastMessageAt: serverTimestamp(),
+      }, { merge: true }).catch(() => {});
     }
   },[initialTargetId, currentUser?.id]);
 
