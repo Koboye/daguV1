@@ -213,7 +213,7 @@ const ShareModal = ({ video, onClose, showToast }) => {
   const apps = [
     { name: 'WhatsApp', emoji: '💬', color: '#25D366', fn: () => { window.open(`https://wa.me/?text=${encodeURIComponent(shareText + ' ' + url)}`); updateDoc(doc(db, 'videos', video.id), { shares: increment(1) }).catch(() => {}); onClose(); } },
     { name: 'Telegram', emoji: '✈️', color: '#26A5E4', fn: () => { window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shareText)}`); onClose(); } },
-    { name: 'X', emoji: '𝕏', color: '#000', fn: () => { window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(url)}`); onClose(); } },
+    { name: 'X', emoji: 'X', color: '#000', fn: () => { window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(url)}`); onClose(); } },
     { name: 'Facebook', emoji: '📘', color: '#1877f2', fn: () => { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`); onClose(); } },
     { name: 'More', emoji: '···', color: '#555', fn: nativeShare },
   ];
