@@ -1664,6 +1664,7 @@ if(activeSubPage==='settings') return (
       <button style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:'1px dashed rgba(255,255,255,0.15)', borderRadius:18, padding:16, color:'rgba(255,255,255,0.4)', cursor:'pointer', fontSize:14, marginTop:4 }}>+ Add Account</button>
     </div>
   );
+};
 
   if(activeSubPage==='badges') return (
     <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
