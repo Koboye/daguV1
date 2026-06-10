@@ -956,10 +956,16 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
     <div style={{ position:'absolute', inset:0, background:'#000' }} onClick={handleTap}>
       {video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image') ?
         <img src={video.videoUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> :
-        <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted autoPlay playsInline />
+        <video ref={videoRef} src={video?.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop muted={muted} autoPlay playsInline />
       }
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.1) 40%,rgba(0,0,0,0.3) 100%)' }} />
       
+      <button onClick={e=>{e.stopPropagation(); setMuted(v=>!v);}} style={{position:'absolute',top:56,right:14,zIndex:16,background:'rgba(0,0,0,0.4)',border:'none',borderRadius:'50%',width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',backdropFilter:'blur(8px)'}}>
+        {muted
+          ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+          : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+        }
+      </button>
       {!isPlaying && (video?.videoUrl && !video.videoUrl.match(/\.(jpg|jpeg|png|gif|webp)/i)) && !video?.mediaType?.startsWith('image') && <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}
       {heartAnim && (
         <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:50, pointerEvents:'none' }}>
@@ -1068,7 +1074,21 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
     </div>
   );
 });
-
+const NotifBellButton = ({ onOpenNotifications, currentUser }) => {
+  const [unread, setUnread] = useState(0);
+  useEffect(()=>{
+    if(!currentUser?.id) return;
+    const q = query(collection(db,'notifications'), where('toUserId','==',currentUser.id), where('read','==',false));
+    const unsub = onSnapshot(q, snap=>setUnread(snap.size), ()=>{});
+    return ()=>unsub();
+  },[currentUser?.id]);
+  return (
+    <button onClick={onOpenNotifications} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', position:'relative' }}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      {unread>0 && <div style={{ position:'absolute', top:6, right:6, width:8, height:8, background:'#ff2d55', borderRadius:'50%', border:'1.5px solid #000' }} />}
+    </button>
+  );
+};
 /* ─────────────── HOME FEED ─────────────── */
 const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -1088,7 +1108,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
   if(!filteredVideos.length) return <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}><div style={{ fontSize:48 }}>📭</div><div style={{ color:'rgba(255,255,255,0.3)' }}>No videos yet. Be the first to post!</div></div>;
   return (
     <div style={{ height:'100%', position:'relative', overflow:'hidden' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:15, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 16px 0' }}>
+      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:15, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'48px 16px 0' }}>
         <div style={{ flex:1, display:'flex', justifyContent:'center', gap:24 }}>
           {TOP_CATEGORIES.map(cat=>(
             <button key={cat.id} onClick={()=>{setActiveCategory(cat.id); setCurrentIndex(0);}} style={{ background:'none', border:'none', color:activeCategory===cat.id?'white':'rgba(255,255,255,0.45)', fontWeight:activeCategory===cat.id?800:500, fontSize:15, cursor:'pointer', paddingBottom:6, borderBottom:activeCategory===cat.id?'2.5px solid white':'2.5px solid transparent', fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", transition:'all 0.2s' }}>
@@ -1100,10 +1120,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
           <button onClick={onOpenSearch} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
-          <button onClick={onOpenNotifications} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', position:'relative' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-            <div style={{ position:'absolute', top:8, right:8, width:8, height:8, background:'#ff2d55', borderRadius:'50%', border:'1.5px solid #000' }} />
-          </button>
+          <NotifBellButton onOpenNotifications={onOpenNotifications} currentUser={currentUser} />
         </div>
       </div>
       {filteredVideos.map((video,idx)=>(
@@ -1912,7 +1929,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
       clearAttach();
     } catch(e){
       showToast?.('Failed to send: ' + e.message, 'error');
-      setText(msg); // restore text if failed
+      if(msg) setText(msg); // restore text only if there was text
     }
   };
 
@@ -2011,10 +2028,11 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
 
   useEffect(()=>{
     if(initialTargetId && currentUser?.id){
-      openConversation(initialTargetId);
+      const tid = initialTargetId;
       onClearTarget?.();
+      setTimeout(()=>openConversation(tid), 100);
     }
-  },[initialTargetId]);
+  },[initialTargetId, currentUser?.id]);
 
   useEffect(()=>{
     if(!currentUser?.id) return;
@@ -2042,14 +2060,18 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
   const getConversationId = (uid1,uid2) => [uid1,uid2].sort().join('_');
 
   const openConversation = async (otherUserId) => {
-    const convId = getConversationId(currentUser.id, otherUserId);
-    // Ensure conversation doc exists
-    await setDoc(doc(db,'conversations',convId),{
-      participants:[currentUser.id,otherUserId],
-      lastMessageAt: serverTimestamp(),
-    },{ merge:true });
-    setActiveConversation({id:convId,otherUserId});
-    onSetConversation?.({id:convId,otherUserId});
+    if(!currentUser?.id || !otherUserId) return;
+    try {
+      const convId = getConversationId(currentUser.id, otherUserId);
+      await setDoc(doc(db,'conversations',convId),{
+        participants:[currentUser.id,otherUserId],
+        lastMessageAt: serverTimestamp(),
+      },{ merge:true });
+      setActiveConversation({id:convId,otherUserId});
+      onSetConversation?.({id:convId,otherUserId});
+    } catch(e) {
+      console.error('openConversation error:', e);
+    }
   };
 
   if(activeConversation){
@@ -3109,7 +3131,18 @@ setLoading(false);
     </div>
   );
 
-  if(step==='verify') return (
+  if(step==='resetpw_sent') return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'#0a0a0a'}}>
+      <div style={{textAlign:'center',maxWidth:300}}>
+        <div style={{fontSize:64,marginBottom:16}}>📬</div>
+        <div style={{color:'white',fontWeight:800,fontSize:22,marginBottom:10,fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"}}>Check your inbox</div>
+        <div style={{color:'rgba(255,255,255,0.5)',fontSize:14,lineHeight:1.6,marginBottom:28}}>We sent a password reset link to <strong style={{color:'white'}}>{identifier}</strong>.</div>
+        <button onClick={()=>{setStep('method');setError('');}} style={{width:'100%',background:'linear-gradient(135deg,#ff2d55,#af52de)',border:'none',borderRadius:24,padding:15,color:'white',fontWeight:700,cursor:'pointer',fontSize:15,fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"}}>Back to Sign In →</button>
+      </div>
+    </div>
+  );
+
+if(step==='verify') return (
     <div style={{height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'#0a0a0a'}}>
       <div style={{textAlign:'center',maxWidth:300}}>
         <div style={{fontSize:64,marginBottom:16}}>📧</div>
@@ -3284,16 +3317,33 @@ export default function DaguV3App() {
 }
         let profile = await getUserProfile(fbUser.uid);
         if(!profile){
-          // Profile may not exist yet if Google signup just happened
-for(let i=0; i<5; i++){
-  await new Promise(r => setTimeout(r, 1000));
-  profile = await getUserProfile(fbUser.uid);
-  if(profile) break;
-}
+          for(let i=0; i<5; i++){
+            await new Promise(r => setTimeout(r, 1000));
+            profile = await getUserProfile(fbUser.uid);
+            if(profile) break;
+          }
         }
         if(profile) {
           setCurrentUser({...profile, id:fbUser.uid});
           setFollowed(profile.following||[]);
+        } else {
+          // Profile never arrived — build fallback so app doesn't stay blank
+          const fallback = {
+            id: fbUser.uid,
+            username: fbUser.displayName?.split(' ')[0]?.toLowerCase() || fbUser.email?.split('@')[0] || 'user',
+            fullName: fbUser.displayName || '',
+            email: fbUser.email || '',
+            avatar: (fbUser.displayName||fbUser.email||'U')[0].toUpperCase(),
+            avatarColor: `hsl(${Math.floor(Math.random()*360)},70%,60%)`,
+            avatarUrl: fbUser.photoURL || null,
+            bio: 'New to Infinity! 🎬',
+            followers: [], following: [], coins: 500,
+            walletBalance: 500, verified: false,
+            subscription: 'free', streak: 1, level: 1,
+          };
+          await createUserProfile(fbUser.uid, fallback);
+          setCurrentUser(fallback);
+          setFollowed([]);
         }
       } else {
         setCurrentUser(null);
