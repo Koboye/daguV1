@@ -1792,8 +1792,10 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const timerRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  const isReady = !!(otherUser && conversationId && currentUser?.id);
+
   useEffect(()=>{
-    if(!conversationId || !currentUser?.id || !otherUser?.id) return;
+    if(!isReady) return;
     let unsub = ()=>{};
 
     const init = async () => {
