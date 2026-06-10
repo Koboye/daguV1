@@ -2042,7 +2042,12 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
 
   if(activeConversation){
     const otherUser = users.find(u=>u.id===activeConversation.otherUserId);
-    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>{ setActiveConversation(null); onSetConversation?.(null); }} showToast={showToast} onViewProfile={uid=>{ setActiveConversation(null); onSetConversation?.(null); onViewProfile?.(uid); }} />;
+    if(!otherUser && users.length === 0) return (
+      <div style={{height:'100%',background:'#0a0a0a',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{width:28,height:28,border:'3px solid rgba(255,45,85,0.3)',borderTop:'3px solid #ff2d55',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+      </div>
+    );
+    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>{ setActiveConversation(null); onSetConversation?.(null); }} showToast={showToast} onViewProfile={uid=>{ onViewProfile?.(uid); }} />;
   }
 
   const convUsers = useMemo(()=>
@@ -3314,6 +3319,10 @@ const [activeConversation, setActiveConversation] = useState(()=>{
 });
 const handleMessage = uid => {
   if(!uid) return;
+  if(!users.find(u => u.id === uid)) {
+    showToast('User not found, please try again','error');
+    return;
+  }
   setActiveConversation(null);
   sessionStorage.removeItem('dagu_conv');
   setInboxTargetId(uid);
