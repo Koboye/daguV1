@@ -953,7 +953,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
               {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-5.99-5.99 19.79 19.79 0 01-3.07-8.67A2 2 0 014 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>, label:'Voice Call', fn:()=>onVoiceCall?.(video.userId)},
               {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>, label:'Video Call', fn:()=>onVideoCall?.(video.userId)},
               {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff9500" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>, label:'Report', fn:()=>{ setShowReportModal(true); setShowActionMenu(false); }},
-             {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff2d55" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>, label:'Block', fn:async()=>{ await updateDoc(doc(db,'users',currentUser.id),{ blockedUsers: arrayUnion(video.userId) }); showToast?.('User blocked','warning'); }},
+             {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff2d55" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>, label:'Block', fn:async()=>{ await updateDoc(doc(db,'users',currentUser.id),{ blockedUsers: arrayUnion(video.userId) }); showToast?.('User blocked','warning'); onBlock?.(video.userId); }},
             ].map(({icon,label,fn})=>(
               <button key={label} onClick={()=>{fn(); setShowActionMenu(false);}} style={{ display:'flex', alignItems:'center', gap:12, width:'100%', padding:'11px 14px', background:'none', border:'none', color:label==='Block'?'#ff2d55':label==='Report'?'#ff9500':'white', cursor:'pointer', borderRadius:16, fontSize:14, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>
                 <span>{icon}</span>{label}
@@ -1039,13 +1039,14 @@ const NotifBellButton = ({ onOpenNotifications, currentUser }) => {
   );
 };
 /* ─────────────── HOME FEED ─────────────── */
-const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications }) => {
+const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications, blockedUsers, onBlock }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('foryou');
   const filteredVideos = useMemo(()=>{
-    if(activeCategory==='foryou') return videos;
-    return videos.filter(v=>v.category===activeCategory);
-  },[videos, activeCategory]);
+    const base = videos.filter(v=>!(blockedUsers||[]).includes(v.userId));
+    if(activeCategory==='foryou') return base;
+    return base.filter(v=>v.category===activeCategory);
+  },[videos, activeCategory, blockedUsers]);
   const startY = useRef(null);
   const handleTouchStart = e => { startY.current=e.touches[0].clientY; };
   const handleTouchEnd = e => {
@@ -1987,19 +1988,19 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
   const [conversations, setConversations] = useState([]);
 
   useEffect(()=>{
-    if(initialTargetId && currentUser?.id && users.length > 0){
-      const tid = initialTargetId;
-      const targetUser = users.find(u => u.id === tid);
-      if(!targetUser) return;
-      onClearTarget?.();
-      const convId = [currentUser.id, tid].sort().join('_');
-      setActiveConversation({ id: convId, otherUserId: tid });
-      onSetConversation?.({ id: convId, otherUserId: tid });
-      setDoc(doc(db, 'conversations', convId), {
-        participants: [currentUser.id, tid],
-        lastMessageAt: serverTimestamp(),
-      }, { merge: true }).catch(() => {});
-    }
+    if(!initialTargetId || !currentUser?.id) return;
+    if(users.length === 0) return;
+    const tid = initialTargetId;
+    const targetUser = users.find(u => u.id === tid);
+    if(!targetUser){ onClearTarget?.(); return; }
+    onClearTarget?.();
+    const convId = [currentUser.id, tid].sort().join('_');
+    setActiveConversation({ id: convId, otherUserId: tid });
+    onSetConversation?.({ id: convId, otherUserId: tid });
+    setDoc(doc(db, 'conversations', convId), {
+      participants: [currentUser.id, tid],
+      lastMessageAt: serverTimestamp(),
+    }, { merge: true }).catch(() => {});
   },[initialTargetId, currentUser?.id, users]);
 
   useEffect(()=>{
@@ -2047,7 +2048,7 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
         <div style={{width:28,height:28,border:'3px solid rgba(255,45,85,0.3)',borderTop:'3px solid #ff2d55',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
       </div>
     );
-    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>{ setActiveConversation(null); onSetConversation?.(null); }} showToast={showToast} onViewProfile={uid=>{ onViewProfile?.(uid); }} />;
+    return <ConversationView currentUser={currentUser} otherUser={otherUser} conversationId={activeConversation.id} onBack={()=>{ setActiveConversation(null); onSetConversation?.(null); onClearTarget?.(); }} showToast={showToast} onViewProfile={uid=>{ onViewProfile?.(uid); }} />;
   }
 
   const convUsers = useMemo(()=>
@@ -3197,6 +3198,7 @@ export default function DaguV3App() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showCreateStory, setShowCreateStory] = useState(false);
   const [followed, setFollowed] = useState([]);
+const [blockedUsers, setBlockedUsers] = useState([]);
   const [viewingProfile, setViewingProfile] = useState(null);
 
   const showToast = useCallback((message, type='info')=>setToast({message,type}),[]);
@@ -3228,6 +3230,7 @@ export default function DaguV3App() {
         if(profile) {
           setCurrentUser({...profile, id:fbUser.uid});
           setFollowed(profile.following||[]);
+setBlockedUsers(profile.blockedUsers||[]);
         } else {
           // Profile never arrived — build fallback so app doesn't stay blank
           const fallback = {
@@ -3280,6 +3283,7 @@ export default function DaguV3App() {
   const handleLogin = (profile) => {
     setCurrentUser(profile);
     setFollowed(profile.following||[]);
+setBlockedUsers(profile.blockedUsers||[]);
     // Save to local accounts list
     const stored = JSON.parse(localStorage.getItem('infinity_accounts')||'[]');
     const exists = stored.find(a=>a.id===profile.id);
@@ -3411,7 +3415,7 @@ const handleMessage = uid => {
           <>
             {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
- onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} />}
+ onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} blockedUsers={blockedUsers} onBlock={uid=>setBlockedUsers(p=>[...p,uid])} />}
             {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
