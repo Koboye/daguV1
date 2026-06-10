@@ -1633,7 +1633,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg> Back
       </button>
       <div style={{ color:'white', fontWeight:800, fontSize:22, marginBottom:20, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>Switch Account</div>
-      {JSON.parse(localStorage.getItem('dagu_accounts')||'[]').filter(u=>u.id===user?.id).map(u=>(
+      {JSON.parse(localStorage.getItem('infinity_accounts')||'[]').filter(u=>u.id===user?.id).map(u=>(
         <div key={u.id} style={{ background:'rgba(255,255,255,0.03)', borderRadius:18, padding:16, marginBottom:10, display:'flex', alignItems:'center', gap:14, cursor: u.id===user?.id?'default':'not-allowed', border:u.id===user?.id?'1px solid rgba(255,45,85,0.5)':'1px solid rgba(255,255,255,0.06)', opacity: u.id===user?.id?1:0.4 }} onClick={()=>{ if(u.id!==user?.id){ showToast?.('Sign in to switch accounts','info'); return; } }}>
           <div style={{ width:50, height:50, borderRadius:'50%', background:u.avatarColor, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:20, overflow:'hidden' }}>
             {u.avatarUrl ? <img src={u.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="" /> : u.avatar}
@@ -1682,7 +1682,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
             await updateDoc(doc(db,'users',user.id),{subscription:plan.name.toLowerCase()});
             setCurrentUser(u=>({...u,subscription:plan.name.toLowerCase()}));
             showToast?.(`${plan.name} activated!`,'success');
-            await sendEmailJS({to_email:user?.email,from_name:'Dagu',message:`Your ${plan.name} subscription has been activated!`});
+            await sendEmailJS({to_email:user?.email,from_name:'Infinity',message:`Your ${plan.name} subscription has been activated!`});
           }} style={{ width:'100%', background:plan.color, border:'none', borderRadius:20, padding:14, color:'#000', fontWeight:800, cursor:'pointer', marginTop:10, fontSize:14, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>Subscribe to {plan.name}</button>
         </div>
       ))}
@@ -2006,7 +2006,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
 };
 
 const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTargetId, onClearTarget, persistedConversation, onSetConversation }) => {
-  const [activeConversation, setActiveConversation] = useState(persistedConversation || null);
+  const [activeConversation, setActiveConversation] = useState(initialTargetId ? null : (persistedConversation || null));
   const [conversations, setConversations] = useState([]);
 
   useEffect(()=>{
@@ -2207,8 +2207,16 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
         );
       } catch (e) {
         console.error('Call error:', e);
-        setStatus('failed');
-        setTimeout(onClose, 1500);
+        if(e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError'){
+          setStatus('failed');
+          alert('Please allow camera/microphone access in your browser settings, then try again.');
+        } else if(e.name === 'NotFoundError'){
+          setStatus('failed');
+          alert('No camera or microphone found on this device.');
+        } else {
+          setStatus('failed');
+        }
+        setTimeout(onClose, 2000);
       }
     };
 
@@ -2724,7 +2732,7 @@ const QRCodePage = ({ user, onClose }) => (
       </div>
       <h3 style={{ color:'white', marginBottom:4, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>@{user?.username}</h3>
       <p style={{ color:'rgba(255,255,255,0.35)', fontSize:12, marginBottom:20 }}>Scan to follow on Infinity</p>
-      <button onClick={()=>navigator.share?.({title:'Infinity',text:`Follow @${user?.username} on Infinity`,url:`https://infinity-v1.vercel.app`
+      <button onClick={()=>navigator.share?.({title:'Infinity',text:`Follow @${user?.username} on Infinity`,url:`https://infinity-now.vercel.app`
 })} style={{ width:'100%', background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:20, padding:13, color:'white', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>Share Profile</button>
     </div>
   </div>
@@ -2871,8 +2879,8 @@ if(!result.user.emailVerified){
       const otp = String(Math.floor(100000 + Math.random() * 900000));
       await sendEmailJS({
         to_email: identifier,
-        from_name: 'Dagu',
-        message: `Your Dagu verification code is: ${otp}\n\nExpires in 10 minutes.`,
+        from_name: 'Infinity',
+        message: `Your Infinity verification code is: ${otp}\n\nExpires in 10 minutes.`,
       });
       setPendingOtp(otp);
       setPendingCreds({ email: identifier, password, username, fullName });
@@ -2978,7 +2986,7 @@ if(step==='otp') return (
         <button onClick={async()=>{
           setLoading(true);
           const otp = String(Math.floor(100000 + Math.random() * 900000));
-          await sendEmailJS({ to_email:pendingCreds.email, from_name:'Dagu', message:`Your new Dagu code: ${otp}` });
+          await sendEmailJS({ to_email:pendingCreds.email, from_name:'Infinity', message:`Your new Infinity code: ${otp}` });
           setPendingOtp(otp);
           setOtpInput('');
           setError('');
@@ -3234,11 +3242,11 @@ for(let i=0; i<5; i++){
     setCurrentUser(profile);
     setFollowed(profile.following||[]);
     // Save to local accounts list
-    const stored = JSON.parse(localStorage.getItem('dagu_accounts')||'[]');
+    const stored = JSON.parse(localStorage.getItem('infinity_accounts')||'[]');
     const exists = stored.find(a=>a.id===profile.id);
     if(!exists) {
       stored.push({ id:profile.id, username:profile.username, avatar:profile.avatar, avatarColor:profile.avatarColor, avatarUrl:profile.avatarUrl, subscription:profile.subscription });
-      localStorage.setItem('dagu_accounts', JSON.stringify(stored));
+      localStorage.setItem('infinity_accounts', JSON.stringify(stored));
     }
     showToast(`Welcome back, @${profile.username}! 👋`,'success');
   };
