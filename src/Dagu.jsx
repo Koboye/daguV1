@@ -1985,8 +1985,10 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
   const [conversations, setConversations] = useState([]);
 
   useEffect(()=>{
-    if(initialTargetId && currentUser?.id){
+    if(initialTargetId && currentUser?.id && users.length > 0){
       const tid = initialTargetId;
+      const targetUser = users.find(u => u.id === tid);
+      if(!targetUser) return;
       onClearTarget?.();
       const convId = [currentUser.id, tid].sort().join('_');
       setActiveConversation({ id: convId, otherUserId: tid });
@@ -1996,7 +1998,7 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
         lastMessageAt: serverTimestamp(),
       }, { merge: true }).catch(() => {});
     }
-  },[initialTargetId, currentUser?.id]);
+  },[initialTargetId, currentUser?.id, users]);
 
   useEffect(()=>{
     if(!currentUser?.id) return;
