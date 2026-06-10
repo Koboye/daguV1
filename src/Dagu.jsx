@@ -2881,7 +2881,10 @@ const AuthScreen = ({ onLogin }) => {
   try {
     if(isLogin){
       const result = await signInWithEmailAndPassword(auth, identifier, password);
-if(!result.user.emailVerified){
+// Only block login if the account is older than 30 seconds (i.e. not just created)
+const createdAt = result.user.metadata?.creationTime;
+const isNewAccount = createdAt && (Date.now() - new Date(createdAt).getTime()) < 30000;
+if(!result.user.emailVerified && !isNewAccount){
   await signOut(auth);
   setError('Please verify your email. Check your inbox for the verification link.');
   setLoading(false);
@@ -3269,10 +3272,15 @@ export default function DaguV3App() {
       if(fbUser){
         // Block unverified email users from entering the app
         if(!fbUser.emailVerified && fbUser.providerData?.some(p => p.providerId === 'password')){
-  await signOut(auth);
-  setCurrentUser(null);
-  setAuthLoading(false);
-  return;
+  // Don't block if we just created the account (within last 30 seconds)
+  const createdAt = fbUser.metadata?.creationTime;
+  const isNewAccount = createdAt && (Date.now() - new Date(createdAt).getTime()) < 30000;
+  if(!isNewAccount){
+    await signOut(auth);
+    setCurrentUser(null);
+    setAuthLoading(false);
+    return;
+  }
 }
         let profile = await getUserProfile(fbUser.uid);
         if(!profile){
