@@ -2877,11 +2877,13 @@ if(!result.user.emailVerified){
       }
 
       const otp = String(Math.floor(100000 + Math.random() * 900000));
-      await sendEmailJS({
-        to_email: identifier,
-        from_name: 'Infinity',
-        message: `Your Infinity verification code is: ${otp}\n\nExpires in 10 minutes.`,
-      });
+await sendEmailJS({
+  to_email: identifier,
+  from_name: 'Infinity',
+  message: `Your Infinity verification code is: ${otp}\n\nExpires in 10 minutes.`,
+  otp_code: otp,
+  code: otp,
+});
       setPendingOtp(otp);
       setPendingCreds({ email: identifier, password, username, fullName });
       setStep('otp');
@@ -2984,14 +2986,20 @@ if(step==='otp') return (
           {loading?'Verifying...':'Verify & Create Account'}
         </button>
         <button onClick={async()=>{
-          setLoading(true);
-          const otp = String(Math.floor(100000 + Math.random() * 900000));
-          await sendEmailJS({ to_email:pendingCreds.email, from_name:'Infinity', message:`Your new Infinity code: ${otp}` });
-          setPendingOtp(otp);
-          setOtpInput('');
-          setError('');
-          setLoading(false);
-        }} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',fontSize:13,cursor:'pointer',textDecoration:'underline',marginBottom:8}}>
+  setLoading(true);
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  await sendEmailJS({ 
+    to_email: pendingCreds.email, 
+    from_name: 'Infinity', 
+    message: `Your new Infinity code: ${otp}`,
+    otp_code: otp,
+    code: otp,
+  });
+  setPendingOtp(otp);
+  setOtpInput('');
+  setError('');
+  setLoading(false);
+}} style={{background:'none',border:'none',color:'rgba(255,255,255,0.4)',fontSize:13,cursor:'pointer',textDecoration:'underline',marginBottom:8}}>
           Resend code
         </button>
         <br/>
