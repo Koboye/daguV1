@@ -3302,6 +3302,7 @@ export default function DaguV3App() {
   const [friends, setFriends] = useState([]);
   const [activeTab, setActiveTab] = useState('home');
   const [toast, setToast] = useState(null);
+  const [notifPopup, setNotifPopup] = useState(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [showCall, setShowCall] = useState(null); // { type, contactName, contactAvatar, contactId }
@@ -3394,7 +3395,28 @@ setBlockedUsers(profile.blockedUsers||[]);
   useEffect(()=>{
     setFriends(followed);
   },[followed]);
-
+// Real-time notification popup
+  useEffect(()=>{
+    if(!currentUser?.id) return;
+    let isFirst = true;
+    const q = query(
+      collection(db,'notifications'),
+      where('toUserId','==',currentUser.id),
+      where('read','==',false),
+      orderBy('createdAt','desc')
+    );
+    const unsub = onSnapshot(q, snap=>{
+      if(isFirst){ isFirst=false; return; }
+      snap.docChanges().forEach(change=>{
+        if(change.type==='added'){
+          const data = change.doc.data();
+          const fromUser = users.find(u=>u.id===data.fromUserId);
+          setNotifPopup({ notif:{...data,id:change.doc.id}, user:fromUser });
+        }
+      });
+    },()=>{});
+    return ()=>unsub();
+  },[currentUser?.id, users]);
   // Incoming call listener
   useEffect(()=>{
     if(!currentUser?.id) return;
@@ -3522,6 +3544,14 @@ const handleMessage = uid => {
     <div style={{ maxWidth:430, margin:'0 auto', height:'100dvh', background:'#0a0a0a', overflow:'hidden' }}>
       <GlobalStyles />
       <AuthScreen onLogin={handleLogin} />
+      {notifPopup && (
+        <NotifPopup
+          notif={notifPopup.notif}
+          user={notifPopup.user}
+          onClose={()=>setNotifPopup(null)}
+          onTap={()=>{ handleViewProfile(notifPopup.notif?.fromUserId); setNotifPopup(null); }}
+        />
+      )}
       {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
     </div>
   );
@@ -3579,7 +3609,14 @@ const handleMessage = uid => {
           <span style={{ color:'white', fontSize:13, fontWeight:800, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", letterSpacing:0.5 }}>LIVE</span>
         </button>
       )}
-
+{notifPopup && (
+        <NotifPopup
+          notif={notifPopup.notif}
+          user={notifPopup.user}
+          onClose={()=>setNotifPopup(null)}
+          onTap={()=>{ handleViewProfile(notifPopup.notif?.fromUserId); setNotifPopup(null); }}
+        />
+      )}
       {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
     </div>
   );
