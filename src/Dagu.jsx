@@ -1008,7 +1008,7 @@ useEffect(() => {
           <div style={{ fontSize:80, animation:'heartBurst 0.9s ease forwards' }}>❤️</div>
         </div>
       )}
-      <div style={{ position:'absolute', bottom:90, left:14, right:70, zIndex:5 }}>
+      <div style={{ position:'absolute', bottom:72, left:14, right:70, zIndex:5 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
           <button onClick={()=>onViewProfile?.(video.userId)} style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
             <div style={{ width:42, height:42, borderRadius:'50%', background:video.avatarColor, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:16, border:'2px solid rgba(255,255,255,0.5)', overflow:'hidden' }}>
@@ -1068,7 +1068,7 @@ useEffect(() => {
         </div>
       )}
 
-      <div style={{ position:'absolute', right:12, bottom:90, display:'flex', flexDirection:'column', alignItems:'center', gap:6, zIndex:6 }}>
+      <div style={{ position:'absolute', right:12, bottom:72, display:'flex', flexDirection:'column', ...
        <button onClick={e=>{e.stopPropagation();handleLike();}} style={{ background:'rgba(0,0,0,0.3)', border:'none', borderRadius:'50%', width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill={liked?'#ff2d55':'none'} stroke={liked?'#ff2d55':'rgba(255,255,255,0.9)'} strokeWidth="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
         </button>
@@ -1150,7 +1150,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
   if(!filteredVideos.length) return <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}><div style={{ fontSize:48 }}>📭</div><div style={{ color:'rgba(255,255,255,0.3)' }}>No videos yet. Be the first to post!</div></div>;
   return (
     <div style={{ height:'100%', position:'relative', overflow:'hidden' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:15, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'48px 16px 0' }}>
+      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:15, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'48px 16px 12px', background:'linear-gradient(to bottom,rgba(0,0,0,0.7) 0%,transparent 100%)' }}>
         <div style={{ flex:1, display:'flex', justifyContent:'center', gap:24 }}>
           {TOP_CATEGORIES.map(cat=>(
             <button key={cat.id} onClick={()=>{setActiveCategory(cat.id); setCurrentIndex(0);}} style={{ background:'none', border:'none', color:activeCategory===cat.id?'white':'rgba(255,255,255,0.45)', fontWeight:activeCategory===cat.id?800:500, fontSize:15, cursor:'pointer', paddingBottom:6, borderBottom:activeCategory===cat.id?'2.5px solid white':'2.5px solid transparent', fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", transition:'all 0.2s' }}>
