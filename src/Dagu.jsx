@@ -886,10 +886,26 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
   };
 useEffect(() => {
   if (!isActive || !video?.description) return;
-  setDisplayDesc(video.description); // show original immediately
+  setDisplayDesc(video.description);
+
+  // Skip if already English (simple heuristic)
+  const hasNonLatin = /[^\u0000-\u007F]/.test(video.description);
+  if (!hasNonLatin) return;
+
   const translate = async () => {
     try {
-      const res = await fetch('https://translate.argosopentech.com/translate', {
+      const res = await fetch(
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(video.description)}`
+      );
+      const data = await res.json();
+      const translated = data?.[0]?.map(s => s?.[0]).filter(Boolean).join('');
+      if (translated && translated !== video.description) {
+        setDisplayDesc(translated);
+      }
+    } catch {}
+  };
+  translate();
+}, [isActive, video?.description]);
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ q: video.description, source: 'auto', target: 'en' })
