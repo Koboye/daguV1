@@ -1445,7 +1445,6 @@ const EditProfileModal = ({ user, onClose, onSave, showToast }) => {
           <div style={{ display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap' }}>
             {colors.map(c=><div key={c} onClick={()=>setAvatarColor(c)} style={{ width:34, height:34, borderRadius:'50%', background:c, cursor:'pointer', border:c===avatarColor?'3px solid white':'3px solid transparent', transition:'all 0.15s' }} />)}
           </div>
-        </div>
         {[
           {label:'Username',value:username,set:setUsername,placeholder:'Your username',prefix:'@'},
           {label:'Bio',value:bio,set:setBio,placeholder:'Tell people about yourself',multiline:true},
