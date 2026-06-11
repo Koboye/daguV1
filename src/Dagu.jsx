@@ -68,7 +68,16 @@ const TOP_CATEGORIES = [
 ];
 
 const EMOJI_LIST = ['😀','😂','😍','🥰','😎','🤔','😭','😱','🔥','❤️','👍','🎉','✨','💯','🙌','👏','🤝','💪','🎵','📸'];
-
+const TRANSLATIONS = {
+  en: { home:'For You', friends:'Friends', inbox:'Messages', profile:'Profile', create:'Create', foryou:'For You', skills:'Skills', jobs:'Jobs' },
+  am: { home:'ለእርስዎ', friends:'ጓደኞች', inbox:'መልዕክቶች', profile:'መገለጫ', create:'ፍጠር', foryou:'ለእርስዎ', skills:'ችሎታዎች', jobs:'ስራዎች' },
+  ar: { home:'لك', friends:'أصدقاء', inbox:'رسائل', profile:'الملف', create:'إنشاء', foryou:'لك', skills:'مهارات', jobs:'وظائف' },
+  fr: { home:'Pour vous', friends:'Amis', inbox:'Messages', profile:'Profil', create:'Créer', foryou:'Pour vous', skills:'Compétences', jobs:'Emplois' },
+  es: { home:'Para ti', friends:'Amigos', inbox:'Mensajes', profile:'Perfil', create:'Crear', foryou:'Para ti', skills:'Habilidades', jobs:'Empleos' },
+  pt: { home:'Para você', friends:'Amigos', inbox:'Mensagens', profile:'Perfil', create:'Criar', foryou:'Para você', skills:'Habilidades', jobs:'Empregos' },
+  hi: { home:'आपके लिए', friends:'दोस्त', inbox:'संदेश', profile:'प्रोफ़ाइल', create:'बनाएं', foryou:'आपके लिए', skills:'कौशल', jobs:'नौकरियाँ' },
+  zh: { home:'为你', friends:'朋友', inbox:'消息', profile:'我的', create:'创建', foryou:'为你', skills:'技能', jobs:'工作' },
+};
 const formatNumber = (num) => {
   const n = Number(num) || 0;
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -1129,7 +1138,7 @@ const NotifBellButton = ({ onOpenNotifications, currentUser }) => {
   );
 };
 /* ─────────────── HOME FEED ─────────────── */
-const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications, blockedUsers, onBlock }) => {
+const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications, blockedUsers, onBlock }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState('foryou');
   const filteredVideos = useMemo(()=>{
@@ -1152,7 +1161,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
         <div style={{ flex:1, display:'flex', justifyContent:'center', gap:24 }}>
           {TOP_CATEGORIES.map(cat=>(
             <button key={cat.id} onClick={()=>{setActiveCategory(cat.id); setCurrentIndex(0);}} style={{ background:'none', border:'none', color:activeCategory===cat.id?'white':'rgba(255,255,255,0.45)', fontWeight:activeCategory===cat.id?800:500, fontSize:15, cursor:'pointer', paddingBottom:6, borderBottom:activeCategory===cat.id?'2.5px solid white':'2.5px solid transparent', fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", transition:'all 0.2s' }}>
-              {cat.label}
+              {cat.id==='foryou'?(t?.foryou||cat.label):cat.id==='skill'?(t?.skills||cat.label):(t?.jobs||cat.label)}
             </button>
           ))}
         </div>
@@ -1196,7 +1205,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
 };
 
 /* ─────────────── FRIENDS FEED ─────────────── */
-const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast, users, onCreateStory, onViewStory, onFollow, followed }) => {
+const FriendsFeed = ({ t, friends, videos, currentUser, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast, users, onCreateStory, onViewStory, onFollow, followed }) => {
   const [search, setSearch] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
@@ -1232,7 +1241,7 @@ const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onV
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#0a0a0a' }}>
       {/* Top bar */}
       <div style={{ position:'relative', zIndex:15, padding:'14px 16px 0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <div style={{ color:'white', fontWeight:800, fontSize:18, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>Friends</div>
+        <div style={{ color:'white', fontWeight:800, fontSize:18, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", textShadow:'0 1px 8px rgba(0,0,0,0.8)' }}>Friends</div>
         <button onClick={()=>setShowSearch(v=>!v)} style={{ background:'rgba(0,0,0,0.4)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:38, height:38, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
@@ -2186,7 +2195,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   );
 };
 
-const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTargetId, onClearTarget, persistedConversation, onSetConversation }) => {
+const InboxPage = ({ t, users, currentUser, showToast, onViewProfile, initialTargetId, onClearTarget, persistedConversation, onSetConversation }) => {
   const [activeConversation, setActiveConversation] = useState(initialTargetId ? null : (persistedConversation || null));
   const [conversations, setConversations] = useState([]);
 
@@ -2266,7 +2275,7 @@ const InboxPage = ({ users, currentUser, showToast, onViewProfile, initialTarget
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#0a0a0a' }}>
       <div style={{ padding:'16px 16px 12px', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ color:'white', fontWeight:800, fontSize:22, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>Messages</div>
+        <div style={{ color:'white', fontWeight:800, fontSize:22, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>{t?.inbox||'Messages'}</div>
       </div>
       <div style={{ flex:1, overflowY:'auto' }}>
         {convUsers.length===0 && <div style={{textAlign:'center',padding:60,color:'rgba(255,255,255,0.2)'}}><div style={{fontSize:44,marginBottom:12}}>💬</div><div style={{fontSize:14}}>No messages yet</div><div style={{fontSize:12,marginTop:6,color:'rgba(255,255,255,0.12)'}}>Go to a profile and tap Message to start</div></div>}
@@ -3402,7 +3411,7 @@ const [blockedUsers, setBlockedUsers] = useState([]);
   const [viewingProfile, setViewingProfile] = useState(null);
 
   const showToast = useCallback((message, type='info')=>setToast({message,type}),[]);
-
+const t = TRANSLATIONS[currentUser?.language || 'en'] || TRANSLATIONS.en;
   // Firebase Auth listener
   useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async (fbUser)=>{
@@ -3678,14 +3687,14 @@ const handleMessage = uid => {
         {showCamera && <CameraUpload onUpload={v=>{setVideos(prev=>[v,...prev]);}} onClose={()=>setShowCamera(false)} showToast={showToast} currentUser={currentUser} />}
         {!showSearch && !showCamera && (
           <>
-            {activeTab==='home' && <HomeFeed videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+            {activeTab==='home' && <HomeFeed t={t} videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} blockedUsers={blockedUsers} onBlock={uid=>setBlockedUsers(p=>[...p,uid])} />}
-            {activeTab==='friends' && <FriendsFeed friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+            {activeTab==='friends' && <FriendsFeed t={t} friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
  onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
-            {activeTab==='inbox' && <InboxPage users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={(conv)=>{ setActiveConversation(conv); sessionStorage.setItem('dagu_conv', JSON.stringify(conv)); }} />}
+            {activeTab==='inbox' && <InboxPage t={t} users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={(conv)=>{ setActiveConversation(conv); sessionStorage.setItem('dagu_conv', JSON.stringify(conv)); }} />}
             {activeTab==='profile' && <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onLogout={handleLogout} users={users} showToast={showToast} onShowAnalytics={()=>setShowAnalytics(true)} onShowQRCode={()=>setShowQRCode(true)} allVideos={videos} setBlockedUsers={setBlockedUsers} />}
           </>
         )}
@@ -3693,12 +3702,15 @@ const handleMessage = uid => {
 
       <div style={{ display:'flex', background:'rgba(8,8,8,0.97)', borderTop:'1px solid rgba(255,255,255,0.06)', padding:'12px 8px 24px', flexShrink:0, backdropFilter:'blur(20px)' }}>
         {tabs.map(tab=>{
-          const isActive=activeTab===tab.id;
-          return (
-            <button key={tab.id} onClick={()=>{setActiveTab(tab.id); if(tab.id==='create') setShowCamera(true);}} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:0, background:'none', border:'none', cursor:'pointer', padding:'4px 0', position:'relative', transition:'transform 0.15s' }}>
-              <TabIcon id={tab.id} active={isActive} />
-            </button>
-          );
+  const isActive=activeTab===tab.id;
+  const tabLabels = { home: t?.home||'Home', friends: t?.friends||'Friends', create: t?.create||'Create', inbox: t?.inbox||'Inbox', profile: t?.profile||'Profile' };
+  return (
+    <button key={tab.id} onClick={()=>{setActiveTab(tab.id); if(tab.id==='create') setShowCamera(true);}} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, background:'none', border:'none', cursor:'pointer', padding:'4px 0', position:'relative', transition:'transform 0.15s' }}>
+      <TabIcon id={tab.id} active={isActive} />
+      {tab.id !== 'create' && <span style={{fontSize:9, color:isActive?'#ff2d55':'rgba(255,255,255,0.3)', fontWeight:isActive?700:400}}>{tabLabels[tab.id]}</span>}
+    </button>
+  );
+})}
         })}
       </div>
 
