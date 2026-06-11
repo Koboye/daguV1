@@ -304,7 +304,7 @@ const StoryViewer = ({ story, user, onClose }) => {
   );
 };
 
-/* ─────────────── STORIES BAR
+/* ─────────────── STORIES BAR ─────────────── */
 const Stories = ({ users, currentUser, onViewStory, onCreateStory }) => (
   <div style={{ display:'flex', gap:14, padding:'14px 16px', overflowX:'auto', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5, flexShrink:0 }}>
@@ -559,15 +559,13 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
           )}
           {tab==='saved' && <div style={{ textAlign:'center', padding:48, color:'rgba(255,255,255,0.25)' }}><div style={{ fontSize:40, marginBottom:10 }}>🔖</div><div>No saved posts</div></div>}
           {tab==='drafts' && <div style={{ textAlign:'center', padding:48, color:'rgba(255,255,255,0.25)' }}><div style={{ fontSize:40, marginBottom:10 }}>📝</div><div>No drafts</div></div>}
-        </div>
         <div style={{ height:30 }} />
       </div>
     </div>
-  </div>
   );
 };
 
-/* ─────────────── LIVE STREAM
+/* ─────────────── LIVE STREAM ─────────────── */
 const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   const [viewers, setViewers] = useState(0);
   const [chatMessages, setChatMessages] = useState([]);
