@@ -1006,20 +1006,35 @@ const [showTranslated, setShowTranslated] = useState(false);
 </p>
 <button
   onClick={async (e) => {
-    e.stopPropagation();
-    if (showTranslated) { setShowTranslated(false); return; }
-    if (translatedDesc) { setShowTranslated(true); return; }
-    setIsTranslating(true);
+  e.stopPropagation();
+  if (showTranslated) { setShowTranslated(false); return; }
+  if (translatedDesc) { setShowTranslated(true); return; }
+  setIsTranslating(true);
+  try {
+    // Use LibreTranslate's free endpoint which supports auto-detect
+    const res = await fetch('https://translate.argosopentech.com/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q: video.description,
+        source: 'auto',
+        target: 'en',
+      })
+    });
+    const data = await res.json();
+    setTranslatedDesc(data.translatedText || video.description);
+    setShowTranslated(true);
+  } catch {
+    // Fallback to MyMemory with Amharic as source
     try {
-      const res = await fetch(
-        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(video.description)}&langpair=auto|en`
-      );
-      const data = await res.json();
-      setTranslatedDesc(data.responseData?.translatedText || video.description);
+      const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(video.description)}&langpair=am|en`);
+      const d = await r.json();
+      setTranslatedDesc(d.responseData?.translatedText || video.description);
       setShowTranslated(true);
     } catch { setTranslatedDesc(video.description); setShowTranslated(true); }
-    setIsTranslating(false);
-  }}
+  }
+  setIsTranslating(false);
+}}
   style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:20, padding:'3px 10px', color:'rgba(255,255,255,0.6)', fontSize:11, cursor:'pointer', marginBottom:6, backdropFilter:'blur(8px)' }}
 >
   {isTranslating ? '⏳' : showTranslated ? '🔤 Original' : '🌍 Translate'}
