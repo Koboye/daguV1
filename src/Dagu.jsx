@@ -563,10 +563,11 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
         <div style={{ height:30 }} />
       </div>
     </div>
+  </div>
   );
 };
 
-/* ─────────────── LIVE STREAM ─────────────── */
+/* ─────────────── LIVE STREAM
 const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   const [viewers, setViewers] = useState(0);
   const [chatMessages, setChatMessages] = useState([]);
