@@ -3349,7 +3349,122 @@ const NotificationsPage = ({ currentUser, users, videos, onClose, onViewProfile 
   );
 };
 
+/* ─────────────── LIVE TRANSLATOR ─────────────── */
+const LiveTranslator = ({ onClose }) => {
+  const [inputText, setInputText] = useState('');
+  const [outputText, setOutputText] = useState('');
+  const [fromLang, setFromLang] = useState('en');
+  const [toLang, setToLang] = useState('am');
+  const [loading, setLoading] = useState(false);
 
+  const LANGUAGES = [
+    { code:'en', label:'English' },
+    { code:'am', label:'አማርኛ Amharic' },
+    { code:'ar', label:'العربية Arabic' },
+    { code:'fr', label:'Français French' },
+    { code:'es', label:'Español Spanish' },
+    { code:'pt', label:'Português Portuguese' },
+    { code:'hi', label:'हिन्दी Hindi' },
+    { code:'zh', label:'中文 Chinese' },
+    { code:'ru', label:'Русский Russian' },
+    { code:'de', label:'Deutsch German' },
+    { code:'ja', label:'日本語 Japanese' },
+    { code:'ko', label:'한국어 Korean' },
+    { code:'sw', label:'Kiswahili Swahili' },
+    { code:'tr', label:'Türkçe Turkish' },
+    { code:'it', label:'Italiano Italian' },
+  ];
+
+  const translate = async () => {
+    if(!inputText.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(inputText)}&langpair=${fromLang}|${toLang}`
+      );
+      const data = await res.json();
+      setOutputText(data.responseData?.translatedText || 'Translation failed');
+    } catch {
+      setOutputText('Translation error. Check connection.');
+    }
+    setLoading(false);
+  };
+
+  const swapLangs = () => {
+    setFromLang(toLang);
+    setToLang(fromLang);
+    setInputText(outputText);
+    setOutputText(inputText);
+  };
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'#0a0a0a', zIndex:500, display:'flex', flexDirection:'column' }}>
+      {/* Header */}
+      <div style={{ padding:'16px', borderBottom:'1px solid rgba(255,255,255,0.06)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <div style={{ color:'white', fontWeight:800, fontSize:20, fontFamily:"'Inter',sans-serif" }}>🌍 Translator</div>
+        <button onClick={onClose} style={{ background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:34, height:34, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
+      </div>
+
+      <div style={{ flex:1, overflowY:'auto', padding:16 }}>
+        {/* Language selectors */}
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+          <select value={fromLang} onChange={e=>setFromLang(e.target.value)}
+            style={{ flex:1, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:14, padding:'10px 12px', color:'white', outline:'none', fontSize:13 }}>
+            {LANGUAGES.map(l=><option key={l.code} value={l.code} style={{ background:'#1a1a1a' }}>{l.label}</option>)}
+          </select>
+
+          <button onClick={swapLangs}
+            style={{ background:'rgba(255,45,85,0.15)', border:'1px solid rgba(255,45,85,0.3)', borderRadius:'50%', width:40, height:40, color:'#ff2d55', cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>⇄</button>
+
+          <select value={toLang} onChange={e=>setToLang(e.target.value)}
+            style={{ flex:1, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:14, padding:'10px 12px', color:'white', outline:'none', fontSize:13 }}>
+            {LANGUAGES.map(l=><option key={l.code} value={l.code} style={{ background:'#1a1a1a' }}>{l.label}</option>)}
+          </select>
+        </div>
+
+        {/* Input */}
+        <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:18, padding:16, marginBottom:12 }}>
+          <div style={{ color:'rgba(255,255,255,0.3)', fontSize:11, fontWeight:700, textTransform:'uppercase', marginBottom:8 }}>
+            {LANGUAGES.find(l=>l.code===fromLang)?.label}
+          </div>
+          <textarea
+            value={inputText}
+            onChange={e=>setInputText(e.target.value)}
+            placeholder="Type text to translate..."
+            rows={4}
+            style={{ width:'100%', background:'none', border:'none', outline:'none', color:'white', fontSize:15, resize:'none', lineHeight:1.5, boxSizing:'border-box' }}
+          />
+          {inputText && (
+            <button onClick={()=>{setInputText(''); setOutputText('');}}
+              style={{ background:'none', border:'none', color:'rgba(255,255,255,0.3)', cursor:'pointer', fontSize:12, marginTop:4 }}>
+              Clear ✕
+            </button>
+          )}
+        </div>
+
+        {/* Translate button */}
+        <button onClick={translate} disabled={loading || !inputText.trim()}
+          style={{ width:'100%', background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:24, padding:14, color:'white', fontWeight:700, cursor:'pointer', fontSize:15, marginBottom:12, opacity:(loading||!inputText.trim())?0.5:1, fontFamily:"'Inter',sans-serif" }}>
+          {loading ? '⏳ Translating...' : '🌍 Translate'}
+        </button>
+
+        {/* Output */}
+        {outputText && (
+          <div style={{ background:'rgba(255,45,85,0.06)', border:'1px solid rgba(255,45,85,0.2)', borderRadius:18, padding:16 }}>
+            <div style={{ color:'rgba(255,255,255,0.3)', fontSize:11, fontWeight:700, textTransform:'uppercase', marginBottom:8 }}>
+              {LANGUAGES.find(l=>l.code===toLang)?.label}
+            </div>
+            <div style={{ color:'white', fontSize:15, lineHeight:1.6 }}>{outputText}</div>
+            <button onClick={()=>navigator.clipboard?.writeText(outputText)}
+              style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:20, padding:'6px 14px', color:'rgba(255,255,255,0.6)', cursor:'pointer', fontSize:12, marginTop:12 }}>
+              📋 Copy
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 /* ─────────────── MAIN APP ─────────────── */
 export default function DaguV3App() {
@@ -3371,6 +3486,7 @@ export default function DaguV3App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showCreateStory, setShowCreateStory] = useState(false);
+  const [showTranslator, setShowTranslator] = useState(false);
   const [followed, setFollowed] = useState([]);
 const [blockedUsers, setBlockedUsers] = useState([]);
   const [viewingProfile, setViewingProfile] = useState(null);
@@ -3641,6 +3757,7 @@ const handleMessage = uid => {
       {showNotifications && <NotificationsPage currentUser={currentUser} users={users} videos={videos} onClose={()=>setShowNotifications(false)} onViewProfile={uid=>{handleViewProfile(uid); setShowNotifications(false);}} />}
       {showAnalytics && <CreatorAnalytics user={currentUser} videos={videos} onClose={()=>setShowAnalytics(false)} />}
       {showCreateStory && <CreateStoryModal currentUser={currentUser} onClose={()=>setShowCreateStory(false)} showToast={showToast} />}
+      {showTranslator && <LiveTranslator onClose={()=>setShowTranslator(false)} />}
       {viewingProfile && (
         <UserProfileModal user={viewingProfile} currentUser={currentUser} onClose={()=>setViewingProfile(null)} onFollow={toggleFollow} onMessage={uid=>{handleMessage(uid); setViewingProfile(null);}} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid}); setViewingProfile(null);}}
  onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid}); setViewingProfile(null);}}
@@ -3678,6 +3795,13 @@ const handleMessage = uid => {
 
       {activeTab==='home' && (
         <button onClick={()=>setShowLiveStream(currentUser)} style={{ position:'absolute', right:14, bottom:88, background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:24, padding:'8px 16px', cursor:'pointer', zIndex:15, display:'flex', alignItems:'center', gap:7, boxShadow:'0 4px 24px rgba(255,45,85,0.5)' }}>
+          {activeTab==='home' && (
+  <button onClick={()=>setShowTranslator(true)}
+    style={{ position:'absolute', left:14, bottom:88, background:'rgba(0,0,0,0.6)', backdropFilter:'blur(10px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:24, padding:'8px 16px', cursor:'pointer', zIndex:15, display:'flex', alignItems:'center', gap:7 }}>
+    <span style={{ fontSize:16 }}>🌍</span>
+    <span style={{ color:'white', fontSize:13, fontWeight:700 }}>Translate</span>
+  </button>
+)}
           <div style={{ width:7, height:7, borderRadius:'50%', background:'white', animation:'pulse 1s infinite' }} />
           <span style={{ color:'white', fontSize:13, fontWeight:800, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", letterSpacing:0.5 }}>LIVE</span>
         </button>
