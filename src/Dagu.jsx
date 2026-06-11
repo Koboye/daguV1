@@ -19,7 +19,8 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
-const messaging = getMessaging(app);
+let messaging = null;
+try { messaging = getMessaging(app); } catch(e) { console.log('Messaging not supported:', e); }
 const VAPID_KEY = 'BHfW8XbTCAHaG6K4QN5qWiQGsfNFrqrjp2Mf_agxVxnk83OG9X7neXfDkgLovMdOKEwkXgaw2t65_HqcLywlbAo';
 googleProvider.setCustomParameters({
   prompt: 'select_account'
@@ -831,7 +832,7 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
   );
 };
 /* ─────────────── ENHANCED VIDEO CARD ─────────────── */
-const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile }) => {
+const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile, onBlock }) => {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(video?.likes||0);
   const [showComments, setShowComments] = useState(false);
@@ -896,7 +897,6 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
   };
 
   const handleTap = (e) => {
-    const handleTap = (e) => {
     // Unmute video on first user interaction (bypass autoplay policy)
     if(videoRef.current && videoRef.current.muted) {
       videoRef.current.muted = false;
@@ -1081,7 +1081,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
               <CommentItem key={comment.id} comment={comment} currentUser={currentUser} onLike={async id=>{await updateDoc(doc(db,'comments',id),{likes:increment(1)});}} onReply={(c)=>setCommentText(`@${c.username} `)} onPin={id=>{const c=comments.find(cc=>cc.id===id); if(c){setPinnedComment(c); showToast?.('Pinned!','success');}}} onViewProfile={onViewProfile} />
             ))}
           </div>
-          <CommentInputBar currentUser={currentUser} commentText={commentText} setCommentText={setCommentText} onSend={() => { addComment(); setShowComments(false); }} showToast={showToast} videoId={video.id} />
+          <CommentInputBar currentUser={currentUser} commentText={commentText} setCommentText={setCommentText} onSend={() => { addComment(); }} showToast={showToast} videoId={video.id} />
         </div>
   </>
       )}
@@ -1140,7 +1140,7 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
         </div>
       </div>
       {filteredVideos.map((video,idx)=>(
-  <div key={video.id} style={{ position:'absolute', inset:0, opacity:idx===currentIndex?1:0, translate:`0 ${(idx-currentIndex)*100}%`, transition:'translate 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
+  <div key={video.id} style={{ position:'absolute', inset:0, opacity:idx===currentIndex?1:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
     <EnhancedVideoCard
       video={video}
       currentUser={currentUser}
@@ -1159,8 +1159,6 @@ const HomeFeed = ({ videos, onLike, onComment, onShare, onFollow, onMessage, onV
       showToast={showToast}
       onViewProfile={onViewProfile}
       onBlock={onBlock}
-      onVoiceCall={onVoiceCall}
-      onVideoCall={onVideoCall}
     />
   </div>
 ))}
@@ -1237,7 +1235,7 @@ const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onV
 
       {/* Fullscreen video cards — same as HomeFeed */}
       {filtered.map((video,idx)=>(
-  <div key={video.id} onClick={()=>setShowSearch(false)} style={{ position:'absolute', inset:0, translate:`0 ${(idx-currentIndex)*100}%`, transition:'translate 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
+  <div key={video.id} onClick={()=>setShowSearch(false)} style={{ position:'absolute', inset:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
           <EnhancedVideoCard
             video={video}
             currentUser={currentUser}
@@ -1256,8 +1254,6 @@ const FriendsFeed = ({ friends, videos, currentUser, onMessage, onVoiceCall, onV
             showToast={showToast}
             onViewProfile={onViewProfile}
             onBlock={uid=>showToast?.('User blocked','warning')}
-            onVoiceCall={onVoiceCall}
-            onVideoCall={onVideoCall}
           />
         </div>
       ))}
@@ -2073,7 +2069,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
     <div style={{height:'100%',background:'#0a0a0a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12}}>
       <div style={{width:32,height:32,border:'3px solid rgba(255,45,85,0.3)',borderTop:'3px solid #ff2d55',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
       <div style={{color:'rgba(255,255,255,0.3)',fontSize:13}}>Loading conversation...</div>
-      <button onClick={()=>{ setActiveConversation(null); onSetConversation?.(null); }} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:20,padding:'8px 20px',color:'rgba(255,255,255,0.5)',cursor:'pointer',fontSize:12,marginTop:8}}>← Back</button>
+      <button onClick={onBack} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:20,padding:'8px 20px',color:'rgba(255,255,255,0.5)',cursor:'pointer',fontSize:12,marginTop:8}}>← Back</button>
     </div>
   );
 
@@ -2897,7 +2893,7 @@ const GuestFeed = ({ onSignIn }) => {
   return (
     <div style={{ height:'100%', position:'relative', overflow:'hidden', background:'#000' }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       {videos.map((video,idx)=>(
-        <div key={video.id} style={{ position:'absolute', inset:0, translate:`0 ${(idx-currentIndex)*100}%`, transition:'translate 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
+        <div key={video.id} style={{ position:'absolute', inset:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
           {video.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i)
             ? <img src={video.videoUrl} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
             : <video src={video.videoUrl} style={{ width:'100%', height:'100%', objectFit:'cover' }} loop autoPlay muted playsInline />
@@ -3435,7 +3431,15 @@ setBlockedUsers(profile.blockedUsers||[]);
     });
     return ()=>unsub();
   },[]);
-
+// Clean up expired stories
+  useEffect(()=>{
+    const cleanup = async () => {
+      const now = new Date();
+      const snap = await getDocs(query(collection(db,'stories'), where('expiresAt','<=',now)));
+      await Promise.all(snap.docs.map(d=>deleteDoc(doc(db,'stories',d.id))));
+    };
+    cleanup();
+  },[]);
   // Real-time videos from Firestore
   useEffect(()=>{
     const q = query(collection(db,'videos'), orderBy('createdAt','desc'));
@@ -3502,7 +3506,7 @@ setBlockedUsers(profile.blockedUsers||[]);
     return ()=>unsub();
   },[currentUser?.id]);
 
-  const handleLogin = (profile) => {
+  const handleLogin = async (profile) => {
     setCurrentUser(profile);
     setFollowed(profile.following||[]);
 setBlockedUsers(profile.blockedUsers||[]);
@@ -3514,6 +3518,13 @@ setBlockedUsers(profile.blockedUsers||[]);
       localStorage.setItem('infinity_accounts', JSON.stringify(stored));
     }
     showToast(`Welcome back, @${profile.username}! 👋`,'success');
+    try {
+      const permission = await Notification.requestPermission();
+      if(permission === 'granted') {
+        const token = messaging ? await getToken(messaging, { vapidKey: VAPID_KEY }) : null;
+        if(token) await updateDoc(doc(db,'users',profile.id),{ fcmToken: token });
+      }
+    } catch(e) { console.log('Push notification setup failed:', e); }
   };
 
   const handleLogout = async () => {
