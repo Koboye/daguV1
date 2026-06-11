@@ -349,7 +349,7 @@ const StoryViewer = ({ story, user, onClose }) => {
 };
 
 /* ─────────────── STORIES BAR ─────────────── */
-const Stories = ({ users, currentUser, onViewStory, onCreateStory }) => (
+const Stories = ({ users, currentUser, onViewStory, onCreateStory, onLive }) => (
   <div style={{ display:'flex', gap:14, padding:'14px 16px', overflowX:'auto', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:5, flexShrink:0 }}>
       <button onClick={onCreateStory} style={{ width:62, height:62, borderRadius:'50%', background:'rgba(255,255,255,0.05)', border:'1.5px dashed rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', position:'relative', overflow:'hidden' }}>
@@ -840,9 +840,7 @@ const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onCommen
   const [commentText, setCommentText] = useState('');
   const [pinnedComment, setPinnedComment] = useState(null);
   const [showShare, setShowShare] = useState(false);
-  const [translatedDesc, setTranslatedDesc] = useState('');
-const [isTranslating, setIsTranslating] = useState(false);
-const [showTranslated, setShowTranslated] = useState(false);
+  const [displayDesc, setDisplayDesc] = useState(video?.description || '');
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [heartAnim, setHeartAnim] = useState(false);
@@ -886,7 +884,30 @@ const [showTranslated, setShowTranslated] = useState(false);
     if(s<86400) return `${Math.floor(s/3600)}h ago`;
     return `${Math.floor(s/86400)}d ago`;
   };
-
+useEffect(() => {
+  if (!isActive || !video?.description) return;
+  setDisplayDesc(video.description); // show original immediately
+  const translate = async () => {
+    try {
+      const res = await fetch('https://translate.argosopentech.com/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: video.description, source: 'auto', target: 'en' })
+      });
+      const data = await res.json();
+      if (data.translatedText && data.translatedText !== video.description) {
+        setDisplayDesc(data.translatedText);
+      }
+    } catch {
+      try {
+        const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(video.description)}&langpair=am|en`);
+        const d = await r.json();
+        if (d.responseData?.translatedText) setDisplayDesc(d.responseData.translatedText);
+      } catch {}
+    }
+  };
+  translate();
+}, [isActive, video?.description]);
   const handleDoubleTap = async () => {
     if(!liked){
       setLiked(true);
@@ -1002,43 +1023,8 @@ const [showTranslated, setShowTranslated] = useState(false);
           </button>
         </div>
         <p style={{ color:'rgba(255,255,255,0.9)', fontSize:13, marginBottom:4, lineHeight:1.5 }}>
-  {showTranslated && translatedDesc ? translatedDesc : video.description}
+  {displayDesc}
 </p>
-<button
-  onClick={async (e) => {
-  e.stopPropagation();
-  if (showTranslated) { setShowTranslated(false); return; }
-  if (translatedDesc) { setShowTranslated(true); return; }
-  setIsTranslating(true);
-  try {
-    // Use LibreTranslate's free endpoint which supports auto-detect
-    const res = await fetch('https://translate.argosopentech.com/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        q: video.description,
-        source: 'auto',
-        target: 'en',
-      })
-    });
-    const data = await res.json();
-    setTranslatedDesc(data.translatedText || video.description);
-    setShowTranslated(true);
-  } catch {
-    // Fallback to MyMemory with Amharic as source
-    try {
-      const r = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(video.description)}&langpair=am|en`);
-      const d = await r.json();
-      setTranslatedDesc(d.responseData?.translatedText || video.description);
-      setShowTranslated(true);
-    } catch { setTranslatedDesc(video.description); setShowTranslated(true); }
-  }
-  setIsTranslating(false);
-}}
-  style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:20, padding:'3px 10px', color:'rgba(255,255,255,0.6)', fontSize:11, cursor:'pointer', marginBottom:6, backdropFilter:'blur(8px)' }}
->
-  {isTranslating ? '⏳' : showTranslated ? '🔤 Original' : '🌍 Translate'}
-</button>
         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
           <div style={{ width:22, height:22, borderRadius:'50%', background:'linear-gradient(135deg,#ff2d55,#af52de)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12 }}>♪</div>
           <span style={{ color:'rgba(255,255,255,0.65)', fontSize:12 }}>{video.song}</span>
@@ -3715,15 +3701,6 @@ const handleMessage = uid => {
         })}
       </div>
 
-      {activeTab==='home' && (
-  <>
-    <button onClick={()=>setShowLiveStream(currentUser)}
-      style={{ position:'absolute', right:14, bottom:88, background:'linear-gradient(135deg,#ff2d55,#af52de)', border:'none', borderRadius:24, padding:'8px 16px', cursor:'pointer', zIndex:15, display:'flex', alignItems:'center', gap:7, boxShadow:'0 4px 24px rgba(255,45,85,0.5)' }}>
-      <div style={{ width:7, height:7, borderRadius:'50%', background:'white', animation:'pulse 1s infinite' }} />
-      <span style={{ color:'white', fontSize:13, fontWeight:800, fontFamily:"'Inter',sans-serif", letterSpacing:0.5 }}>LIVE</span>
-    </button>
-  </>
-)}
 {notifPopup && (
         <NotifPopup
           notif={notifPopup.notif}
