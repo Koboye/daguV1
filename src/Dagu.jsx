@@ -559,9 +559,9 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
           )}
           {tab==='saved' && <div style={{ textAlign:'center', padding:48, color:'rgba(255,255,255,0.25)' }}><div style={{ fontSize:40, marginBottom:10 }}>🔖</div><div>No saved posts</div></div>}
           {tab==='drafts' && <div style={{ textAlign:'center', padding:48, color:'rgba(255,255,255,0.25)' }}><div style={{ fontSize:40, marginBottom:10 }}>📝</div><div>No drafts</div></div>}
+        </div>
         <div style={{ height:30 }} />
       </div>
-    </div>
     </div>
   );
 };
