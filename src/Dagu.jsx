@@ -485,7 +485,7 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', zIndex:3000, display:'flex', alignItems:'flex-end' }} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()}>
+      <div onClick={e=>e.stopPropagation()} style={{ width:'100%', background:'#111', borderTopLeftRadius:24, borderTopRightRadius:24, maxHeight:'90vh', overflowY:'auto' }}>
         <div style={{ width:36, height:4, background:'rgba(255,255,255,0.12)', borderRadius:2, margin:'16px auto 0' }} />
         <div style={{ display:'flex', justifyContent:'flex-end', padding:'10px 16px 0' }}>
           <button onClick={onClose} style={{ background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:34, height:34, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
@@ -561,6 +561,7 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
           {tab==='drafts' && <div style={{ textAlign:'center', padding:48, color:'rgba(255,255,255,0.25)' }}><div style={{ fontSize:40, marginBottom:10 }}>📝</div><div>No drafts</div></div>}
         <div style={{ height:30 }} />
       </div>
+    </div>
     </div>
   );
 };
