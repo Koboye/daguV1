@@ -1686,7 +1686,7 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
       <div style={{background:'rgba(255,255,255,0.03)',borderRadius:20,overflow:'hidden',border:'1px solid rgba(255,255,255,0.06)'}}>
         <div style={{background:'rgba(255,165,0,0.08)',border:'1px solid rgba(255,165,0,0.2)',borderRadius:14,padding:'10px 14px',marginBottom:16,color:'#ff9500',fontSize:12,lineHeight:1.5}}>
   ⚠️ Only navigation labels are currently translated. Buttons, modals, and other text remain in English.
-          );
+          </div>
         {[['English','English','en'],['አማርኛ','Amharic','am'],['العربية','Arabic','ar'],['Français','French','fr'],['Español','Spanish','es'],['Português','Portuguese','pt'],['हिन्दी','Hindi','hi'],['中文','Chinese','zh']].map(([label,sub,code],i,arr)=>{
           const selected = (user?.language||'en')===code;
           return (
@@ -1701,10 +1701,9 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
         })}
       </div>
     </div>
-  
-</div>
+  );
 
-  if(activeSubPage==='wallet') return <WalletPage user={user} setCurrentUser={setCurrentUser} showToast={showToast} onBack={()=>setActiveSubPage(null)} />;
+if(activeSubPage==='wallet') return <WalletPage user={user} setCurrentUser={setCurrentUser} showToast={showToast} onBack={()=>setActiveSubPage(null)} />;
 
   if(activeSubPage==='unblock') return (
     <div style={{ height:'100%', overflow:'auto', background:'#0a0a0a', padding:16 }}>
