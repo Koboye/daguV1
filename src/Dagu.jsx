@@ -665,8 +665,6 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
     };
   },[streamer]);
 
-  useEffect(()=>{},[streamer]);
-
   useEffect(()=>{
     if(!liveRef.current) return;
     const q = query(collection(db,'liveMessages'), where('liveId','==',liveRef.current), orderBy('createdAt','asc'));
@@ -2167,7 +2165,8 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
       clearAttach();
     } catch(e){
       showToast?.('Failed to send: ' + e.message, 'error');
-      if(msg) setText(msg); // restore text only if there was text
+      if(msg) setText(msg);
+      clearAttach();
     }
   };
 
@@ -2436,7 +2435,10 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const callDocId = useRef(callDocIdProp || [currentUser?.id, contactId].sort().join('_'));
+  const callDocId = useRef(null);
+  if(!callDocId.current) {
+    callDocId.current = callDocIdProp || [currentUser?.id, contactId].sort().join('_');
+  }
 
   useEffect(() => {
     let unsubAnswer = ()=>{};
@@ -3752,9 +3754,7 @@ setBlockedUsers(profile.blockedUsers||[]);
 
   const handleViewProfile = uid => { const user=users.find(u=>u.id===uid); if(user) setViewingProfile(user); };
   const [inboxTargetId, setInboxTargetId] = useState(null);
-const [activeConversation, setActiveConversation] = useState(()=>{
-  try { return JSON.parse(sessionStorage.getItem('dagu_conv')||'null'); } catch { return null; }
-});
+const [activeConversation, setActiveConversation] = useState(null);
 const handleMessage = uid => {
   if(!uid) return;
   // Don't block if users haven't loaded yet — InboxPage will wait
@@ -3837,6 +3837,8 @@ const handleMessage = uid => {
           callData={incomingCall}
           onAnswer={()=>{
   const snap = {...incomingCall};
+  const docId = snap.callDocId || snap.id;
+  snap.callDocId = docId;
   setIncomingCall(null);
   setShowCall({
     type: snap.callType||'audio',
@@ -3844,7 +3846,7 @@ const handleMessage = uid => {
     contactAvatar: snap.callerAvatar||'?',
     contactId: snap.callerId,
     isCallee: true,
-    callDocId: snap.callDocId
+    callDocId: snap.callDocId || snap.id
   });
 }}
           onDecline={()=>{
