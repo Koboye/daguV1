@@ -314,7 +314,12 @@ const ShareModal = ({ video, onClose, showToast }) => {
         </div>
 
         {/* App icons — scrollable row */}
-        <div style={{ overflowX: 'auto', display: 'flex', gap: 0, padding: '18px 16px 8px' }}>
+        <div style={{ overflowX: 'auto', display: 'flex', gap: 0, padding: '18px 16px 8px', position: 'relative' }}>
+          <div style={{
+  position:'absolute', top:0, right:0, bottom:0, width:32,
+  background:'linear-gradient(to right, transparent, #1c1c1e)',
+  pointerEvents:'none', borderRadius:'0 0 0 0'
+}} />
           {shareApps.map(app => (
             <button
               key={app.name}
@@ -812,7 +817,7 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
   };
 
   return (
-    <div style={{padding:'10px 14px 24px',borderTop:'1px solid rgba(255,255,255,0.06)',background:'#0a0a0a'}}>
+    <div style={{padding:'10px 14px',paddingBottom:'max(24px, env(safe-area-inset-bottom))',borderTop:'1px solid rgba(255,255,255,0.06)',background:'#0a0a0a'}}>
       {(previewFile||audioBlob)&&(
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8,background:'rgba(255,255,255,0.05)',borderRadius:14,padding:'8px 12px'}}>
           {previewFile?.type?.startsWith('image')&&<img src={previewFile.url} alt="" style={{height:44,width:44,objectFit:'cover',borderRadius:8}}/>}
@@ -847,6 +852,7 @@ const CommentInputBar = ({ currentUser, commentText, setCommentText, onSend, sho
   );
 };
 /* ─────────────── ENHANCED VIDEO CARD ─────────────── */
+const menuButtonRef = useRef(null);
 const EnhancedVideoCard = memo(({ video, currentUser, isActive, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onViewProfile, onBlock }) => {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(video?.likes||0);
@@ -920,18 +926,25 @@ useEffect(() => {
   if (!hasNonLatin) return;
 
   const translate = async () => {
-    try {
-      const res = await fetch(
-        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(video.description)}`
-      );
-      const data = await res.json();
-      const translated = data?.[0]?.map(s => s?.[0]).filter(Boolean).join('');
-      if (translated && translated !== video.description) {
-        setDisplayDesc(translated);
-      }
-    } catch {}
-  };
-  translate();
+  try {
+    const cacheRef = doc(db, 'translations', video.id);
+    const cached = await getDoc(cacheRef);
+    if (cached.exists()) {
+      setDisplayDesc(cached.data().en || video.description);
+      return;
+    }
+    const res = await fetch(
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(video.description)}`
+    );
+    const data = await res.json();
+    const translated = data?.[0]?.map(s => s?.[0]).filter(Boolean).join('');
+    if (translated && translated !== video.description) {
+      setDisplayDesc(translated);
+      setDoc(cacheRef, { en: translated }, { merge: true }).catch(() => {});
+    }
+  } catch {}
+};
+translate();
 }, [isActive, video?.description]);
   const handleDoubleTap = async () => {
     if(!liked){
@@ -1047,7 +1060,7 @@ useEffect(() => {
           </button>
           <span onClick={e=>{e.stopPropagation();onViewProfile?.(video.userId);}} style={{ color:'white', fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>@{video.username}</span>
           <button onClick={e=>{e.stopPropagation();onFollow?.(video.userId);}} style={{ padding:'5px 14px', borderRadius:20, background:followed?.includes(video.userId)?'rgba(255,255,255,0.08)':'rgba(255,45,85,0.9)', border:followed?.includes(video.userId)?'1px solid rgba(255,255,255,0.4)':'none', color:'white', fontSize:12, fontWeight:700, cursor:'pointer', backdropFilter:'blur(4px)' }}>{followed?.includes(video.userId)?'Unfollow':'+ Follow'}</button>
-          <button onClick={()=>setShowActionMenu(!showActionMenu)} style={{ background:'rgba(0,0,0,0.4)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:'50%', width:30, height:30, color:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(8px)' }}>
+          <button ref={menuButtonRef} onClick={()=>setShowActionMenu(!showActionMenu)} style={{ background:'rgba(0,0,0,0.4)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:'50%', width:30, height:30, color:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(8px)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
           </button>
         </div>
@@ -1063,7 +1076,7 @@ useEffect(() => {
 
       {showActionMenu && (
         <div onClick={()=>setShowActionMenu(false)} style={{ position:'absolute', inset:0, zIndex:19 }}>
-          <div onClick={e=>e.stopPropagation()} style={{ position:'absolute', bottom:160, left:14, background:'rgba(18,18,18,0.97)', backdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:22, padding:6, zIndex:20, minWidth:210, animation:'popIn 0.2s ease' }}>
+          <div onClick={e=>e.stopPropagation()} style={{ position:'absolute',   bottom: menuButtonRef.current     ? window.innerHeight - menuButtonRef.current.getBoundingClientRect().top + 8     : 160,   left:14, background:'rgba(18,18,18,0.97)', backdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:22, padding:6, zIndex:20, minWidth:210, animation:'popIn 0.2s ease' }}>
             {[
               {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>, label:'Duet', fn:()=>onDuet?.(video.id)},
               {icon:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 014-4h12"/></svg>, label:'Stitch', fn:()=>onStitch?.(video.id)},
@@ -1660,7 +1673,9 @@ const ProfilePage = ({ user, setCurrentUser, onLogout, users, showToast, onShowA
         })}
       </div>
     </div>
-  );
+  <div style={{background:'rgba(255,165,0,0.08)',border:'1px solid rgba(255,165,0,0.2)',borderRadius:14,padding:'10px 14px',marginBottom:16,color:'#ff9500',fontSize:12,lineHeight:1.5}}>
+  ⚠️ Only navigation labels are currently translated. Buttons, modals, and other text remain in English.
+</div>
 
   if(activeSubPage==='wallet') return <WalletPage user={user} setCurrentUser={setCurrentUser} showToast={showToast} onBack={()=>setActiveSubPage(null)} />;
 
@@ -2090,26 +2105,32 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
       },{ merge: true });
 
       const q = query(
-        collection(db,'messages', conversationId,'msgs'),
-        orderBy('createdAt','asc')
-      );
-      unsub = onSnapshot(q, snap=>{
-        const msgs = snap.docs.map(d=>({id:d.id,...d.data(),
-          ts: d.data().createdAt?.toDate?.() || null
-        }));
-        setMessages(msgs);
-        setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),80);
-      }, async () => {
-        // fallback: no index
-        const q2 = query(collection(db,'messages', conversationId,'msgs'));
-        unsub = onSnapshot(q2, snap2=>{
-          const msgs = snap2.docs.map(d=>({id:d.id,...d.data(),
-            ts: d.data().createdAt?.toDate?.() || null
-          })).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
-          setMessages(msgs);
-          setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),80);
-        });
-      });
+  collection(db, 'messages', conversationId, 'msgs'),
+  orderBy('createdAt', 'asc')
+);
+const q2 = query(collection(db, 'messages', conversationId, 'msgs'));
+
+let usedFallback = false;
+
+unsub = onSnapshot(q, (snap) => {
+  const msgs = snap.docs.map(d => ({
+    id: d.id, ...d.data(),
+    ts: d.data().createdAt?.toDate?.() || null
+  }));
+  setMessages(msgs);
+  setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+}, () => {
+  if (usedFallback) return;
+  usedFallback = true;
+  unsub = onSnapshot(q2, (snap2) => {
+    const msgs = snap2.docs.map(d => ({
+      id: d.id, ...d.data(),
+      ts: d.data().createdAt?.toDate?.() || null
+    })).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+    setMessages(msgs);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+  });
+});
     };
 
     init();
@@ -2258,7 +2279,7 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
           ))}
         </div>
       )}
-      <div style={{padding:'10px 14px 28px',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center'}}>        <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
+      <div style={{padding:'10px 14px',paddingBottom:'max(28px, env(safe-area-inset-bottom))',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',gap:8,alignItems:'center'}}>        <button onClick={()=>fileInputRef.current?.click()} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0}}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={pickFile} style={{display:'none'}}/>
@@ -2425,7 +2446,15 @@ const IncomingCallScreen = ({ callData, onAnswer, onDecline }) => (
     </div>
   </div>
 );
-
+useEffect(() => {
+  if (!callData?.callDocId) return;
+  const unsub = onSnapshot(doc(db, 'calls', callData.callDocId), (snap) => {
+    if (!snap.exists() || snap.data()?.status === 'ended') {
+      onDecline?.();
+    }
+  });
+  return () => unsub();
+}, [callData?.callDocId]);
 const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, onClose, isCallee: isCalleeProp, callDocId: callDocIdProp }) => {
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState('calling');
@@ -2435,10 +2464,7 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const callDocId = useRef(null);
-  if(!callDocId.current) {
-    callDocId.current = callDocIdProp || [currentUser?.id, contactId].sort().join('_');
-  }
+  const callDocId = useRef(callDocIdProp || [currentUser?.id, contactId].sort().join('_'));
 
   useEffect(() => {
     let unsubAnswer = ()=>{};
@@ -2455,7 +2481,9 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
         localStreamRef.current = stream;
         if (localVideoRef.current) { localVideoRef.current.srcObject = stream; localVideoRef.current.play().catch(()=>{}); }
 
-        const pc = new RTCPeerConnection({
+        // DEMO ONLY — expressturn free tier has low bandwidth caps.
+// For production, generate short-lived TURN credentials server-side.
+const pc = new RTCPeerConnection({
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
@@ -2564,7 +2592,16 @@ if (isCallee) {
       unsubCandidates();
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       pcRef.current?.close();
-      updateDoc(doc(db, 'calls', callDocId.current), { status: 'ended' }).catch(() => {});
+      const cleanupCall = async () => {
+  try {
+    const callerCands = await getDocs(collection(db, 'calls', callDocId.current, 'callerCandidates'));
+    await Promise.all(callerCands.docs.map(d => deleteDoc(d.ref)));
+    const calleeCands = await getDocs(collection(db, 'calls', callDocId.current, 'calleeCandidates'));
+    await Promise.all(calleeCands.docs.map(d => deleteDoc(d.ref)));
+    await deleteDoc(doc(db, 'calls', callDocId.current));
+  } catch {}
+};
+cleanupCall();
     };
   }, []);
 
@@ -3893,11 +3930,11 @@ const handleMessage = uid => {
         {showCamera && <CameraUpload onUpload={v=>{setVideos(prev=>[v,...prev]);}} onClose={()=>setShowCamera(false)} showToast={showToast} currentUser={currentUser} />}
         {!showSearch && !showCamera && (
           <>
-            {activeTab==='home' && <HomeFeed t={t} videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
- onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+            {activeTab==='home' && <HomeFeed t={t} videos={videos} currentUser={currentUser} onLike={()=>{}} onComment={()=>{}} onShare={()=>{}} onFollow={toggleFollow} onMessage={handleMessage} onVoiceCall={uid=>{   const u=users.find(uu=>uu.id===uid);   const callDocId=[currentUser.id,uid].sort().join('_');   setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid,callDocId}); }}
+ onVideoCall={uid=>{   const u=users.find(uu=>uu.id===uid);   const callDocId=[currentUser.id,uid].sort().join('_');   setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid,callDocId}); }}
  onDuet={()=>showToast?.('Duet mode ready','info')} onStitch={()=>showToast?.('Stitch mode ready','info')} onSaveSound={()=>showToast?.('Sound saved!','success')} followed={followed} showToast={showToast} onLive={()=>setShowLiveStream(currentUser)} onViewProfile={handleViewProfile} onOpenSearch={()=>setShowSearch(true)} onOpenNotifications={()=>setShowNotifications(true)} blockedUsers={blockedUsers} onBlock={uid=>setBlockedUsers(p=>[...p,uid])} />}
-            {activeTab==='friends' && <FriendsFeed t={t} friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
- onVideoCall={uid=>{const u=users.find(uu=>uu.id===uid); setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid});}}
+            {activeTab==='friends' && <FriendsFeed t={t} friends={friends} videos={videos} currentUser={currentUser} onMessage={handleMessage} onVoiceCall={uid=>{   const u=users.find(uu=>uu.id===uid);   const callDocId=[currentUser.id,uid].sort().join('_');   setShowCall({type:'audio',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid,callDocId}); }}
+ onVideoCall={uid=>{   const u=users.find(uu=>uu.id===uid);   const callDocId=[currentUser.id,uid].sort().join('_');   setShowCall({type:'video',contactName:u?.username,contactAvatar:u?.avatar,contactId:uid,callDocId}); }}
  onViewProfile={handleViewProfile} showToast={showToast} users={users} onCreateStory={()=>setShowCreateStory(true)} onViewStory={setShowStoryViewer} onFollow={toggleFollow} followed={followed} />}
             {activeTab==='create' && <CreateScreen onOpenCamera={()=>setShowCamera(true)} onShowSoundLibrary={()=>setShowSoundLibrary(true)} showToast={showToast} />}
             {activeTab==='inbox' && <InboxPage t={t} users={users} currentUser={currentUser} showToast={showToast} onViewProfile={handleViewProfile} initialTargetId={inboxTargetId} onClearTarget={()=>setInboxTargetId(null)} persistedConversation={activeConversation} onSetConversation={(conv)=>{ setActiveConversation(conv); sessionStorage.setItem('dagu_conv', JSON.stringify(conv)); }} />}
@@ -3911,7 +3948,7 @@ const handleMessage = uid => {
   const isActive=activeTab===tab.id;
   const tabLabels = { home: t?.home||'Home', friends: t?.friends||'Friends', create: t?.create||'Create', inbox: t?.inbox||'Inbox', profile: t?.profile||'Profile' };
   return (
-    <button key={tab.id} onClick={()=>{setActiveTab(tab.id); if(tab.id==='create') setShowCamera(true);}} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, background:'none', border:'none', cursor:'pointer', padding:'4px 0', position:'relative', transition:'transform 0.15s' }}>
+    <button key={tab.id} onClick={()=>{   if(tab.id==='create'){     setShowCamera(true);   } else {     setActiveTab(tab.id);   } }} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, background:'none', border:'none', cursor:'pointer', padding:'4px 0', position:'relative', transition:'transform 0.15s' }}>
       <TabIcon id={tab.id} active={isActive} />
       {tab.id !== 'create' && <span style={{fontSize:9, color:isActive?'#ff2d55':'rgba(255,255,255,0.3)', fontWeight:isActive?700:400}}>{tabLabels[tab.id]}</span>}
     </button>
