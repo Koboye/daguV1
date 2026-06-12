@@ -2048,9 +2048,7 @@ if(activeSubPage==='settings') return (
         {profileTab==='drafts' && <div style={{ textAlign:'center', padding:48, color:'rgba(255,255,255,0.2)' }}><div style={{ fontSize:40, marginBottom:12 }}>📝</div><div>No drafts yet</div></div>}
       </div>
       {showEditProfile && <EditProfileModal user={user} onClose={()=>setShowEditProfile(false)} onSave={saveProfile} showToast={showToast} />}
-      <button onClick={()=>setShowAvatarViewer(true)} style={{position:'fixed',top:16,left:16,zIndex:20,width:42,height:42,borderRadius:'50%',overflow:'hidden',border:'2px solid rgba(255,255,255,0.25)',background:user?.avatarColor,padding:0,cursor:'pointer'}}>
-        {user?.avatarUrl?<img src={user.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/>:<span style={{color:'white',fontWeight:'bold',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',height:'100%'}}>{user?.avatar}</span>}
-      </button>
+    
       {showAvatarViewer && (
         <div onClick={()=>setShowAvatarViewer(false)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.97)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:16}}>
           <div style={{position:'absolute',inset:0,background:user?.avatarUrl?'none':user?.avatarColor,backgroundImage:user?.avatarUrl?`url(${user.avatarUrl})`:'none',backgroundSize:'cover',backgroundPosition:'center',filter:'blur(28px) brightness(0.4)',transform:'scale(1.1)'}}/>
@@ -3051,12 +3049,13 @@ const QRCodePage = ({ user, onClose }) => (
     <div style={{ background:'#111', borderRadius:28, padding:32, textAlign:'center', maxWidth:300, width:'100%', margin:'0 20px', border:'1px solid rgba(255,255,255,0.08)', position:'relative' }}>
       <button onClick={onClose} style={{ position:'absolute', top:14, right:14, background:'rgba(255,255,255,0.08)', border:'none', borderRadius:'50%', width:32, height:32, color:'white', cursor:'pointer', fontSize:16 }}>✕</button>
       <div style={{ color:'white', fontWeight:800, fontSize:18, marginBottom:20, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>My QR Code</div>
-      <div style={{ width:180, height:180, background:'white', margin:'0 auto 20px', borderRadius:20, display:'flex', alignItems:'center', justifyContent:'center', backgroundImage:'repeating-linear-gradient(45deg,#000 0,#000 2px,#fff 2px,#fff 8px)' }}>
-        <div style={{ width:140, height:140, background:'white', borderRadius:16, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column' }}>
-          <div style={{ fontSize:36 }}>🎬</div>
-          <div style={{ fontSize:11, fontWeight:'bold', marginTop:6 }}>@{user?.username}</div>
-        </div>
-      </div>
+      <div style={{ width:180, height:180, margin:'0 auto 20px', borderRadius:20, overflow:'hidden', background:'white', display:'flex', alignItems:'center', justifyContent:'center' }}>
+  <img
+    src={`https://chart.googleapis.com/chart?chs=160x160&cht=qr&chl=${encodeURIComponent('https://infinity-now.vercel.app/user/' + user?.username)}&choe=UTF-8`}
+    alt="QR Code"
+    style={{ width:160, height:160 }}
+  />
+</div>
       <h3 style={{ color:'white', marginBottom:4, fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>@{user?.username}</h3>
       <p style={{ color:'rgba(255,255,255,0.35)', fontSize:12, marginBottom:20 }}>Scan to follow on Infinity</p>
       <button onClick={()=>navigator.share?.({title:'Infinity',text:`Follow @${user?.username} on Infinity`,url:`https://infinity-now.vercel.app`
@@ -3608,10 +3607,10 @@ const t = TRANSLATIONS[currentUser?.language || 'en'] || TRANSLATIONS.en;
           }
         }
         if(profile) {
-          setCurrentUser({...profile, id:fbUser.uid});
-          setFollowed(profile.following||[]);
-setBlockedUsers(profile.blockedUsers||[]);
-        } else {
+  setCurrentUser({...profile, id:fbUser.uid, language: profile.language || 'en'});
+  setFollowed(profile.following||[]);
+  setBlockedUsers(profile.blockedUsers||[]);
+} else {
           // Profile never arrived — build fallback so app doesn't stay blank
           const fallback = {
             id: fbUser.uid,
