@@ -2332,7 +2332,16 @@ const InboxPage = ({ t, users, currentUser, showToast, onViewProfile, initialTar
 
  if(activeConversation){
     const otherUser = users.find(u=>u.id===activeConversation?.otherUserId) || null;
-    if(!otherUser && users.length > 0) {
+    if(!otherUser) {
+      if(users.length === 0) {
+        // Still loading users — show spinner, don't reset
+        return (
+          <div style={{height:'100%',background:'#0a0a0a',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            <div style={{width:32,height:32,border:'3px solid rgba(255,45,85,0.3)',borderTop:'3px solid #ff2d55',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+          </div>
+        );
+      }
+      // Users loaded but user not found — reset safely
       setActiveConversation(null);
       onSetConversation?.(null);
       return null;
@@ -2420,7 +2429,7 @@ const IncomingCallScreen = ({ callData, onAnswer, onDecline }) => (
   </div>
 );
 
-const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, onClose }) => {
+const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, onClose, isCallee: isCalleeProp, callDocId: callDocIdProp }) => {
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState('calling');
   const [isMuted, setIsMuted] = useState(false);
@@ -2429,7 +2438,7 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const callDocId = useRef([currentUser?.id, contactId].sort().join('_'));
+  const callDocId = useRef(callDocIdProp || [currentUser?.id, contactId].sort().join('_'));
 
   useEffect(() => {
     let unsubAnswer = ()=>{};
@@ -2447,13 +2456,22 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
         if (localVideoRef.current) { localVideoRef.current.srcObject = stream; localVideoRef.current.play().catch(()=>{}); }
 
         const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'turn:global.relay.metered.ca:80', username: 'f5e29fd91b8ea2fc485c24ac', credential: 'FZlzkJ5GJJUyYocD' },
-            { urls: 'turn:global.relay.metered.ca:443', username: 'f5e29fd91b8ea2fc485c24ac', credential: 'FZlzkJ5GJJUyYocD' },
-          ]
-        });
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ]
+});
         pcRef.current = pc;
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
@@ -2471,11 +2489,29 @@ const CallModal = ({ type, contactName, contactAvatar, contactId, currentUser, o
           }
         };
 
-        const callSnap = await getDoc(doc(db, 'calls', callDocId.current));
-        const isCallee = callSnap.exists() && callSnap.data()?.offer && callSnap.data()?.callerId !== currentUser?.id;
+        // Check if we're answering (callee) or initiating (caller)
+let callSnap = await getDoc(doc(db, 'calls', callDocId.current));
 
-        if (isCallee) {
-          await pc.setRemoteDescription(new RTCSessionDescription(callSnap.data().offer));
+// If callee but offer not yet written, wait up to 5 seconds
+if (isCalleeProp && (!callSnap.exists() || !callSnap.data()?.offer)) {
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    callSnap = await getDoc(doc(db, 'calls', callDocId.current));
+    if (callSnap.exists() && callSnap.data()?.offer) break;
+  }
+}
+
+let isCallee = isCalleeProp !== undefined
+  ? isCalleeProp
+  : (callSnap.exists() && callSnap.data()?.calleeId === currentUser?.id);
+
+if (isCallee) {
+  if (!callSnap.data()?.offer) {
+    setStatus('failed');
+    setTimeout(onClose, 2000);
+    return;
+  }
+  await pc.setRemoteDescription(new RTCSessionDescription(callSnap.data().offer));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await updateDoc(doc(db, 'calls', callDocId.current), {
@@ -3803,12 +3839,13 @@ const handleMessage = uid => {
           onAnswer={()=>{
   const snap = {...incomingCall};
   setIncomingCall(null);
-  updateDoc(doc(db,'calls',snap.callDocId),{status:'answered'}).catch(()=>{});
   setShowCall({
     type: snap.callType||'audio',
     contactName: snap.callerName||'Unknown',
     contactAvatar: snap.callerAvatar||'?',
-    contactId: snap.callerId
+    contactId: snap.callerId,
+    isCallee: true,
+    callDocId: snap.callDocId
   });
 }}
           onDecline={()=>{
@@ -3817,7 +3854,7 @@ const handleMessage = uid => {
           }}
         />
       )}
-      {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} contactId={showCall.contactId} currentUser={currentUser} onClose={()=>setShowCall(null)} />}
+      {showCall && <CallModal type={showCall.type} contactName={showCall.contactName} contactAvatar={showCall.contactAvatar} contactId={showCall.contactId} currentUser={currentUser} onClose={()=>setShowCall(null)} isCallee={showCall.isCallee} callDocId={showCall.callDocId} />}
       {showLiveStream && <LiveStream streamer={showLiveStream} onClose={()=>setShowLiveStream(null)} showToast={showToast} currentUser={currentUser} />}
       {showStoryViewer && (
         <div onClick={()=>setShowStoryViewer(null)} style={{position:'fixed',inset:0,background:'#000',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
