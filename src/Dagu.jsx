@@ -1235,8 +1235,6 @@ const handleLongPressStart = () => {
       <div style={{ position:'absolute', inset:0, background:'linear-gradient(to top,rgba(0,0,0,0.85) 0%,rgba(0,0,0,0.1) 40%,rgba(0,0,0,0.3) 100%)' }} />
       
       {!isPlaying && (video?.videoUrl && !video.videoUrl.match(/\.(jpg|jpeg|png|gif|webp)/i)) && !video?.mediaType?.startsWith('image') && <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}
-      {heartAnim && (
-      <VideoProgressBar videoRef={videoRef} isActive={isActive} isImage={!!(video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image'))} />
       <VideoProgressBar videoRef={videoRef} isActive={isActive} isImage={!!(video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image'))} />
       {heartAnim && (
         <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:50, pointerEvents:'none' }}>
@@ -1324,6 +1322,20 @@ const handleLongPressStart = () => {
         </button>
         <span style={{ color:'rgba(255,255,255,0.85)', fontSize:11, fontWeight:600 }}>{formatNumber(video.shares||0)}</span>
       </div>
+
+      {floatingReactions.map(r=>(
+        <div key={r.id} style={{ position:'absolute', bottom:200, left:`${r.x}%`, zIndex:60, pointerEvents:'none', fontSize:36, animation:'floatUp 1.5s ease forwards' }}>{r.emoji}</div>
+      ))}
+      {showReactions && (
+        <div onClick={e=>e.stopPropagation()} style={{ position:'absolute', bottom:160, left:'50%', transform:'translateX(-50%)', zIndex:55, background:'rgba(20,20,20,0.95)', backdropFilter:'blur(20px)', borderRadius:50, padding:'8px 12px', display:'flex', gap:4, border:'1px solid rgba(255,255,255,0.12)', animation:'popInBounce 0.3s ease' }}>
+          {REACTIONS.map(emoji=>(
+            <button key={emoji} onClick={()=>handleReact(emoji)} style={{ background:'none', border:'none', fontSize:28, cursor:'pointer', padding:'4px 6px', borderRadius:30, transition:'transform 0.15s' }}
+              onMouseEnter={e=>e.currentTarget.style.transform='scale(1.4)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}
+            >{emoji}</button>
+          ))}
+        </div>
+      )}
 
       {showComments && (
   <>
@@ -4068,15 +4080,6 @@ const [blockedUsers, setBlockedUsers] = useState([]);
 
   const showToast = useCallback((message, type='info')=>setToast({message,type}),[]);
   const isOnline = useNetworkStatus();
-  useEffect(()=>{
-    if(!messaging || !currentUser?.id) return;
-    try {
-      const unsub = onMessage(messaging, payload=>{
-        showToast(payload?.notification?.title || 'New notification', 'info');
-      });
-      return ()=>unsub?.();
-    } catch {}
-  },[currentUser?.id]);
   const t = TRANSLATIONS[currentUser?.language || 'en'] || TRANSLATIONS.en;
 
   useEffect(()=>{
