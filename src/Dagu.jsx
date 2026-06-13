@@ -760,13 +760,6 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
             </div>
           ))}
         </div>
-        const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
-  const [viewers, setViewers] = useState(0);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [message, setMessage] = useState('');
-  const [floatingGifts, setFloatingGifts] = useState([]);
-  const chatRef = useRef(null);
-  const liveRef = useRef(null);
       </div>
       <div style={{ display:'flex', gap:10, padding:'10px 14px 28px', borderTop:'1px solid rgba(255,255,255,0.06)', zIndex:10 }}>
         <input value={message} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()} placeholder="Say something..." style={{ flex:1, background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:28, padding:'10px 16px', color:'white', outline:'none', fontSize:13 }} />
@@ -2169,7 +2162,14 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const fileInputRef = useRef(null);
   const isReady = !!(otherUser?.id && conversationId && currentUser?.id && otherUser?.username);
 
-
+  const timeAgo = (date) => {
+    if(!date) return '';
+    const s = Math.floor((new Date() - date) / 1000);
+    if(s < 60) return `${s}s ago`;
+    if(s < 3600) return `${Math.floor(s/60)}m ago`;
+    if(s < 86400) return `${Math.floor(s/3600)}h ago`;
+    return `${Math.floor(s/86400)}d ago`;
+  };
 
   useEffect(()=>{
     if(!isReady) return;
@@ -2419,7 +2419,7 @@ unseen.forEach(d => updateDoc(d.ref, { status: 'seen' }).catch(()=>{}));
           setText(e.target.value);
           setDoc(doc(db,'typing',conversationId),{[currentUser.id]:serverTimestamp()},{merge:true}).catch(()=>{});
         }} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
-        <button onMouseDown={startVoice} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
+        <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 10px rgba(255,45,85,0.6)':'none'}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
         <button onClick={()=>setShowEmoji(v=>!v)} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:18}}>😊</button>
@@ -2688,8 +2688,9 @@ if (isCalleeProp && (!callSnap.exists() || !callSnap.data()?.offer)) {
     callSnap = await getDoc(doc(db, 'calls', callDocId.current));
     if (callSnap.exists() && callSnap.data()?.offer) break;
   }
+}
 
-let isCallee = isCalleeProp !== undefined
+const isCallee = isCalleeProp !== undefined
   ? isCalleeProp
   : (callSnap.exists() && callSnap.data()?.calleeId === currentUser?.id);
 
