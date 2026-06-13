@@ -178,7 +178,6 @@ const getUserProfile = async (uid) => {
 
 /* ─────────────── GLOBAL STYLES ─────────────── */
 const GlobalStyles = () => (
-  {!isOnline && <OfflineBanner />}
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
     *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -247,21 +246,6 @@ const VideoSkeleton = () => (
     <div className="skeleton" style={{ height:11, borderRadius:6, width:'60%' }} />
   </div>
 );
-const RippleButton = ({ onClick, style, children, disabled }) => {
-  const handleClick = (e) => {
-    if(disabled) return;
-    haptic('light');
-    const btn = e.currentTarget;
-    const rect = btn.getBoundingClientRect();
-    btn.style.setProperty('--x', `${e.clientX - rect.left}px`);
-    btn.style.setProperty('--y', `${e.clientY - rect.top}px`);
-    btn.classList.remove('ripple-btn');
-    void btn.offsetWidth;
-    btn.classList.add('ripple-btn');
-    onClick?.(e);
-  };
-  return <button onClick={handleClick} disabled={disabled} style={style} className="ripple-btn">{children}</button>;
-};
 const RippleButton = ({ onClick, style, children, disabled }) => {
   const handleClick = (e) => {
     if(disabled) return;
@@ -1236,6 +1220,7 @@ const handleLongPressStart = () => {
       {!isPlaying && (video?.videoUrl && !video.videoUrl.match(/\.(jpg|jpeg|png|gif|webp)/i)) && !video?.mediaType?.startsWith('image') && <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}
       {heartAnim && (
       <VideoProgressBar videoRef={videoRef} isActive={isActive} isImage={!!(video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image'))} />
+      {heartAnim && (
         <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:50, pointerEvents:'none' }}>
           <div style={{ fontSize:80, animation:'heartBurst 0.9s ease forwards' }}>❤️</div>
         </div>
@@ -1400,6 +1385,7 @@ const OfflineBanner = () => (
     <span style={{ color:'#000', fontWeight:700, fontSize:13 }}>You're offline — some features may be unavailable</span>
   </div>
 );
+      
 /* ─────────────── HOME FEED ─────────────── */
 const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications, blockedUsers, onBlock }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -1410,9 +1396,27 @@ const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, 
     return base.filter(v=>v.category===activeCategory);
   },[videos, activeCategory, blockedUsers]);
   const startY = useRef(null);
-  const startY = useRef(null);
   const startTime = useRef(null);
   const lastY = useRef(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const pullStartY = useRef(null);
+  const [pullDist, setPullDist] = useState(0);
+  const handlePullStart = e => { if(currentIndex===0) pullStartY.current = e.touches[0].clientY; };
+  const handlePullMove = e => {
+    if(pullStartY.current===null || currentIndex!==0) return;
+    const dy = e.touches[0].clientY - pullStartY.current;
+    if(dy > 0 && dy < 100) setPullDist(dy);
+  };
+  const handlePullEnd = async () => {
+    if(pullDist > 60){
+      haptic('medium');
+      setRefreshing(true);
+      await new Promise(r=>setTimeout(r, 1200));
+      setRefreshing(false);
+    }
+    setPullDist(0);
+    pullStartY.current = null;
+  };
   const handleTouchStart = e => {
     startY.current = e.touches[0].clientY;
     lastY.current = e.touches[0].clientY;
@@ -1481,25 +1485,7 @@ const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, 
     </div>
   );
 };
-const [refreshing, setRefreshing] = useState(false);
-  const pullStartY = useRef(null);
-  const [pullDist, setPullDist] = useState(0);
-  const handlePullStart = e => { if(currentIndex===0) pullStartY.current = e.touches[0].clientY; };
-  const handlePullMove = e => {
-    if(pullStartY.current===null || currentIndex!==0) return;
-    const dy = e.touches[0].clientY - pullStartY.current;
-    if(dy > 0 && dy < 100) setPullDist(dy);
-  };
-  const handlePullEnd = async () => {
-    if(pullDist > 60){
-      haptic('medium');
-      setRefreshing(true);
-      await new Promise(r=>setTimeout(r, 1200));
-      setRefreshing(false);
-    }
-    setPullDist(0);
-    pullStartY.current = null;
-  };
+
 /* ─────────────── FRIENDS FEED ─────────────── */
 const FriendsFeed = ({ t, friends, videos, currentUser, onMessage, onVoiceCall, onVideoCall, onViewProfile, showToast, users, onCreateStory, onViewStory, onFollow, followed, blockedUsers, onBlock }) => {
   const [search, setSearch] = useState('');
@@ -1524,11 +1510,20 @@ const FriendsFeed = ({ t, friends, videos, currentUser, onMessage, onVoiceCall, 
   // Reset index when filter changes
   useEffect(()=>setCurrentIndex(0),[search]);
 
-  const handleTouchStart = e => { startY.current = e.touches[0].clientY; };
+  const startTime = useRef(null);
+  const handleTouchStart = e => {
+    startY.current = e.touches[0].clientY;
+    startTime.current = Date.now();
+  };
+  const handleTouchMove = e => { startY.current && void e; };
   const handleTouchEnd = e => {
     if(startY.current===null) return;
     const dy = startY.current - e.changedTouches[0].clientY;
-    if(Math.abs(dy)>50){
+    const dt = Date.now() - (startTime.current||Date.now());
+    const velocity = Math.abs(dy) / Math.max(dt, 1);
+    const threshold = velocity > 0.3 ? 20 : 50;
+    if(Math.abs(dy) > threshold){
+      haptic('light');
       if(dy>0) setCurrentIndex(i=>Math.min(filtered.length-1,i+1));
       else setCurrentIndex(i=>Math.max(0,i-1));
     }
@@ -1571,8 +1566,7 @@ const FriendsFeed = ({ t, friends, videos, currentUser, onMessage, onVoiceCall, 
           <div style={{ width:18, height:18, border:'2px solid rgba(255,255,255,0.3)', borderTop:'2px solid #ff2d55', borderRadius:'50%', animation: refreshing ? 'spin 0.8s linear infinite' : '', transform: !refreshing ? `rotate(${pullDist*3}deg)` : '' }} />
         </div>
       )}
-    
-
+     
       {/* Fullscreen video cards — same as HomeFeed */}
       {filtered.map((video,idx)=>(
   <div key={video.id} onClick={()=>setShowSearch(false)} style={{ position:'absolute', inset:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
@@ -4052,7 +4046,18 @@ const [blockedUsers, setBlockedUsers] = useState([]);
   const [viewingProfile, setViewingProfile] = useState(null);
 
   const showToast = useCallback((message, type='info')=>setToast({message,type}),[]);
-const t = TRANSLATIONS[currentUser?.language || 'en'] || TRANSLATIONS.en;
+  const isOnline = useNetworkStatus();
+  const t = TRANSLATIONS[currentUser?.language || 'en'] || TRANSLATIONS.en;
+
+  useEffect(()=>{
+    if(!messaging || !currentUser?.id) return;
+    try {
+      const unsub = onMessage(messaging, payload=>{
+        showToast(payload?.notification?.title || 'New notification', 'info');
+      });
+      return ()=>unsub?.();
+    } catch {}
+  },[currentUser?.id]);
   // Firebase Auth listener
   useEffect(()=>{
     const unsub = onAuthStateChanged(auth, async (fbUser)=>{
@@ -4296,7 +4301,8 @@ const TabIcon = ({id, active, currentUser}) => {
   if(authLoading) return (
     <div style={{ maxWidth:430, margin:'0 auto', height:'100dvh', background:'#0a0a0a', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:16 }}>
       <GlobalStyles />
-      <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/znfksngv27boh3c1kxpv.png" style={{ width:64, height:64, borderRadius:20, objectFit:'cover', boxShadow:'0 20px 60px rgba(255,45,85,0.4)' }} />
+      {!isOnline && <OfflineBanner />}
+      <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/znfksngv27boh3c1kxpv.png"
       <div style={{ width:32, height:32, border:'3px solid rgba(255,45,85,0.3)', borderTop:'3px solid #ff2d55', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
     </div>
   );
@@ -4320,6 +4326,7 @@ const TabIcon = ({id, active, currentUser}) => {
   return (
     <div style={{ maxWidth:430, margin:'0 auto', height:'100dvh', background:'#0a0a0a', display:'flex', flexDirection:'column', position:'relative', overflow:'hidden' }}>
       <GlobalStyles />
+      {!isOnline && <OfflineBanner />}
 {incomingCall && !showCall && (
         <IncomingCallScreen
           callData={incomingCall}
