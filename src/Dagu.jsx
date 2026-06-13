@@ -30,7 +30,24 @@ googleProvider.setCustomParameters({
 const CLOUDINARY_CLOUD = 'dotvhzjmc';
 const CLOUDINARY_PRESET = 'g3c7dwdg';
 const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/upload`;
+const useNetworkStatus = () => {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(()=>{
+    const on = ()=>setOnline(true);
+    const off = ()=>setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return ()=>{ window.removeEventListener('online',on); window.removeEventListener('offline',off); };
+  },[]);
+  return online;
+};
 
+const OfflineBanner = () => (
+  <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:10000, background:'#ff9500', padding:'10px 16px', display:'flex', alignItems:'center', gap:8, justifyContent:'center', animation:'slideDown 0.3s ease' }}>
+    <span style={{ fontSize:16 }}>📡</span>
+    <span style={{ color:'#000', fontWeight:700, fontSize:13 }}>You're offline — some features may be unavailable</span>
+  </div>
+);
 /* ─────────────── EMAILJS CONFIG ─────────────── */
 const EMAILJS_SERVICE = 'service_mtqmvbb';
 const EMAILJS_TEMPLATE = 'template_1k7wiqa';
@@ -1220,6 +1237,7 @@ const handleLongPressStart = () => {
       {!isPlaying && (video?.videoUrl && !video.videoUrl.match(/\.(jpg|jpeg|png|gif|webp)/i)) && !video?.mediaType?.startsWith('image') && <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:15,pointerEvents:'none'}}><div style={{width:72,height:72,borderRadius:'50%',background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="32" height="32" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div></div>}
       {heartAnim && (
       <VideoProgressBar videoRef={videoRef} isActive={isActive} isImage={!!(video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image'))} />
+      <VideoProgressBar videoRef={videoRef} isActive={isActive} isImage={!!(video?.videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)/i) || video?.mediaType?.startsWith('image'))} />
       {heartAnim && (
         <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:50, pointerEvents:'none' }}>
           <div style={{ fontSize:80, animation:'heartBurst 0.9s ease forwards' }}>❤️</div>
@@ -1367,24 +1385,7 @@ const NotifBellButton = ({ onOpenNotifications, currentUser }) => {
           ))}
         </div>
       )}
-      const useNetworkStatus = () => {
-  const [online, setOnline] = useState(navigator.onLine);
-  useEffect(()=>{
-    const on = ()=>setOnline(true);
-    const off = ()=>setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    return ()=>{ window.removeEventListener('online',on); window.removeEventListener('offline',off); };
-  },[]);
-  return online;
-};
-
-const OfflineBanner = () => (
-  <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:10000, background:'#ff9500', padding:'10px 16px', display:'flex', alignItems:'center', gap:8, justifyContent:'center', animation:'slideDown 0.3s ease' }}>
-    <span style={{ fontSize:16 }}>📡</span>
-    <span style={{ color:'#000', fontWeight:700, fontSize:13 }}>You're offline — some features may be unavailable</span>
-  </div>
-);
+      
       
 /* ─────────────── HOME FEED ─────────────── */
 const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications, blockedUsers, onBlock }) => {
@@ -1396,27 +1397,28 @@ const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, 
     return base.filter(v=>v.category===activeCategory);
   },[videos, activeCategory, blockedUsers]);
   const startY = useRef(null);
+  const [refreshing, setRefreshing] = useState(false);
+const pullStartY = useRef(null);
+const [pullDist, setPullDist] = useState(0);
+const handlePullStart = e => { if(currentIndex===0) pullStartY.current = e.touches[0].clientY; };
+const handlePullMove = e => {
+  if(pullStartY.current===null || currentIndex!==0) return;
+  const dy = e.touches[0].clientY - pullStartY.current;
+  if(dy > 0 && dy < 100) setPullDist(dy);
+};
+const handlePullEnd = async () => {
+  if(pullDist > 60){
+    haptic('medium');
+    setRefreshing(true);
+    await new Promise(r=>setTimeout(r, 1200));
+    setRefreshing(false);
+  }
+  setPullDist(0);
+  pullStartY.current = null;
+};
   const startTime = useRef(null);
   const lastY = useRef(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const pullStartY = useRef(null);
-  const [pullDist, setPullDist] = useState(0);
-  const handlePullStart = e => { if(currentIndex===0) pullStartY.current = e.touches[0].clientY; };
-  const handlePullMove = e => {
-    if(pullStartY.current===null || currentIndex!==0) return;
-    const dy = e.touches[0].clientY - pullStartY.current;
-    if(dy > 0 && dy < 100) setPullDist(dy);
-  };
-  const handlePullEnd = async () => {
-    if(pullDist > 60){
-      haptic('medium');
-      setRefreshing(true);
-      await new Promise(r=>setTimeout(r, 1200));
-      setRefreshing(false);
-    }
-    setPullDist(0);
-    pullStartY.current = null;
-  };
+  
   const handleTouchStart = e => {
     startY.current = e.touches[0].clientY;
     lastY.current = e.touches[0].clientY;
@@ -1492,6 +1494,25 @@ const FriendsFeed = ({ t, friends, videos, currentUser, onMessage, onVoiceCall, 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showSearch, setShowSearch] = useState(false);
   const startY = useRef(null);
+  const [refreshing, setRefreshing] = useState(false);
+const pullStartY = useRef(null);
+const [pullDist, setPullDist] = useState(0);
+const handlePullStart = e => { pullStartY.current = e.touches[0].clientY; };
+const handlePullMove = e => {
+  if(pullStartY.current===null) return;
+  const dy = e.touches[0].clientY - pullStartY.current;
+  if(dy > 0 && dy < 100) setPullDist(dy);
+};
+const handlePullEnd = async () => {
+  if(pullDist > 60){
+    haptic('medium');
+    setRefreshing(true);
+    await new Promise(r=>setTimeout(r, 1200));
+    setRefreshing(false);
+  }
+  setPullDist(0);
+  pullStartY.current = null;
+};
 
   const friendsVideos = useMemo(()=>
   videos
@@ -4047,6 +4068,15 @@ const [blockedUsers, setBlockedUsers] = useState([]);
 
   const showToast = useCallback((message, type='info')=>setToast({message,type}),[]);
   const isOnline = useNetworkStatus();
+  useEffect(()=>{
+    if(!messaging || !currentUser?.id) return;
+    try {
+      const unsub = onMessage(messaging, payload=>{
+        showToast(payload?.notification?.title || 'New notification', 'info');
+      });
+      return ()=>unsub?.();
+    } catch {}
+  },[currentUser?.id]);
   const t = TRANSLATIONS[currentUser?.language || 'en'] || TRANSLATIONS.en;
 
   useEffect(()=>{
@@ -4302,7 +4332,7 @@ const TabIcon = ({id, active, currentUser}) => {
     <div style={{ maxWidth:430, margin:'0 auto', height:'100dvh', background:'#0a0a0a', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:16 }}>
       <GlobalStyles />
       {!isOnline && <OfflineBanner />}
-      <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/znfksngv27boh3c1kxpv.png"
+      <img src="https://res.cloudinary.com/dotvhzjmc/image/upload/znfksngv27boh3c1kxpv.png" style={{ width:80, height:80, borderRadius:24, marginBottom:16 }} alt="Infinity" />
       <div style={{ width:32, height:32, border:'3px solid rgba(255,45,85,0.3)', borderTop:'3px solid #ff2d55', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
     </div>
   );
