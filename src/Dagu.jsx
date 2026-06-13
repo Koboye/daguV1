@@ -1460,8 +1460,8 @@ const handlePullEnd = async () => {
       </div>
       {filteredVideos.map((video,idx)=>(
   Math.abs(idx-currentIndex) > 1 ? null :
-  <div key={video.id} style={{ position:'absolute', inset:0, opacity:idx===currentIndex?1:0, transform:`translateY(${(idx-currentIndex)*100}%)`,
-    <EnhancedVideoCard
+  <div key={video.id} style={{ position:'absolute', inset:0, opacity:idx===currentIndex?1:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
+      <EnhancedVideoCard
       video={video}
       currentUser={currentUser}
       isActive={idx===currentIndex}
@@ -1595,7 +1595,7 @@ const handlePullEnd = async () => {
       {/* Fullscreen video cards — same as HomeFeed */}
       {filtered.map((video,idx)=>(
   Math.abs(idx-currentIndex) > 1 ? null :
-  <div key={video.id} onClick={()=>setShowSearch(false)} style={{ position:'absolute', inset:0, transform:`translateY(${(idx-currentIndex)*100}%)`,
+  <div key={video.id} onClick={()=>setShowSearch(false)} style={{ position:'absolute', inset:0, transform:`translateY(${(idx-currentIndex)*100}%)`, transition:'transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)', pointerEvents:idx===currentIndex?'auto':'none' }}>
           <EnhancedVideoCard
             video={video}
             currentUser={currentUser}
