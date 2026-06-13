@@ -188,7 +188,23 @@ const GlobalStyles = () => (
 );
 /* ─────────────── NOTIFICATION POPUP (TikTok style) ─────────────── */
 const NotifPopup = ({ notif, user, onClose, onTap }) => {
-  useEffect(()=>{ const t=setTimeout(onClose,4000); return ()=>clearTimeout(t); },[onClose]);
+  useEffect(()=>{
+  const t=setTimeout(onClose,4000); 
+  // Vibrate on mobile
+  navigator.vibrate?.(200);
+  // Ping sound
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(); osc.stop(ctx.currentTime + 0.3);
+  } catch(e){}
+  return ()=>clearTimeout(t); 
+},[onClose]);
   const icons = { like:'❤️', comment:'💬', follow:'👤', mention:'@', gift:'🎁', live:'🔴', call:'📞' };
   return (
     <div onClick={()=>{ onTap?.(); onClose(); }}
@@ -644,18 +660,25 @@ const UserProfileModal = ({ user, currentUser, onClose, onFollow, onMessage, onV
 const LiveCameraView = () => {
   const videoRef = useRef(null);
   useEffect(()=>{
-    navigator.mediaDevices.getUserMedia({video:true,audio:false}).then(stream=>{
-      if(videoRef.current){ videoRef.current.srcObject=stream; }
-      return ()=>stream.getTracks().forEach(t=>t.stop());
-    }).catch(()=>{});
+    let stream;
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true})
+      .then(s=>{
+        stream = s;
+        if(videoRef.current){ 
+          videoRef.current.srcObject = s; 
+          videoRef.current.play().catch(()=>{});
+        }
+      }).catch(()=>{});
+    return ()=>{ stream?.getTracks().forEach(t=>t.stop()); };
   },[]);
-  return <video ref={videoRef} autoPlay playsInline muted style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',opacity:0.7}}/>;
+  return <video ref={videoRef} autoPlay playsInline muted style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}/>;
 };
 /* ─────────────── LIVE STREAM ─────────────── */
 const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
   const [viewers, setViewers] = useState(0);
   const [chatMessages, setChatMessages] = useState([]);
   const [message, setMessage] = useState('');
+  const [floatingGifts, setFloatingGifts] = useState([]);
   const chatRef = useRef(null);
   const liveRef = useRef(null);
 
@@ -737,11 +760,13 @@ const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
             </div>
           ))}
         </div>
-        <div style={{ display:'flex', flexDirection:'column', gap:14, alignItems:'center', marginLeft:12 }}>
-          {[['❤️',0],['🎁',1],['👍',2]].map(([icon,i])=>(
-            <button key={i} onClick={()=>showToast?.('Gift sent! 🎁','success')} style={{ background:'rgba(255,255,255,0.12)', border:'none', borderRadius:'50%', width:44, height:44, fontSize:22, cursor:'pointer' }}>{icon}</button>
-          ))}
-        </div>
+        const LiveStream = ({ streamer, onClose, showToast, currentUser }) => {
+  const [viewers, setViewers] = useState(0);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [message, setMessage] = useState('');
+  const [floatingGifts, setFloatingGifts] = useState([]);
+  const chatRef = useRef(null);
+  const liveRef = useRef(null);
       </div>
       <div style={{ display:'flex', gap:10, padding:'10px 14px 28px', borderTop:'1px solid rgba(255,255,255,0.06)', zIndex:10 }}>
         <input value={message} onChange={e=>setMessage(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendMessage()} placeholder="Say something..." style={{ flex:1, background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:28, padding:'10px 16px', color:'white', outline:'none', fontSize:13 }} />
@@ -2131,6 +2156,9 @@ const ConversationView = ({ currentUser, otherUser, conversationId, onBack, show
   const [messages, setMessages] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [otherTyping, setOtherTyping] = useState(false);
+  const [presenceData, setPresenceData] = useState(null);
+  const typingTimerRef = useRef(null);
   const [recordSecs, setRecordSecs] = useState(0);
   const [audioBlob, setAudioBlob] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
@@ -2178,12 +2206,26 @@ unsub = onSnapshot(q, (snap) => {
     })).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
     setMessages(msgs);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    // Mark incoming messages as seen
+const unseen = snap.docs.filter(d => 
+  d.data().from === otherUser.id && d.data().status !== 'seen'
+);
+unseen.forEach(d => updateDoc(d.ref, { status: 'seen' }).catch(()=>{}));
   });
 });
     };
 
     init();
-    return ()=>unsub();
+    const typingUnsub = onSnapshot(doc(db,'typing',conversationId), snap => {
+      const data = snap.data();
+      if (!data) return;
+      const ts = data[otherUser.id]?.toMillis?.();
+      setOtherTyping(!!(ts && Date.now() - ts < 4000));
+    });
+    const presenceUnsub = onSnapshot(doc(db,'presence',otherUser.id), snap => {
+      setPresenceData(snap.data());
+    });
+    return ()=>{ unsub(); typingUnsub(); presenceUnsub(); };
   },[conversationId, currentUser?.id, otherUser?.id]);
 
   const startVoice = async () => {
@@ -2218,13 +2260,14 @@ unsub = onSnapshot(q, (snap) => {
     setText('');
     try {
       await addDoc(collection(db,'messages', conversationId,'msgs'),{
-        from: currentUser.id, 
-        to: otherUser.id, 
-        text: msg, 
-        mediaUrl: mediaUrl || null, 
-        mediaType: mediaType || null, 
-        createdAt: serverTimestamp() 
-      });
+  from: currentUser.id, 
+  to: otherUser.id, 
+  text: msg, 
+  mediaUrl: mediaUrl || null, 
+  mediaType: mediaType || null, 
+  createdAt: serverTimestamp(),
+  status: 'sent'
+});
       // Update conversation metadata
       await setDoc(doc(db,'conversations', conversationId),{ 
         participants: [currentUser.id, otherUser.id], 
@@ -2274,7 +2317,10 @@ unsub = onSnapshot(q, (snap) => {
         </div>
         <div onClick={()=>onViewProfile?.(otherUser?.id)} style={{cursor:'pointer'}}>
           <div style={{color:'white',fontWeight:700,fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"}}>@{otherUser?.username}</div>
-          <div style={{color:'#06d6a0',fontSize:11,display:'flex',alignItems:'center',gap:4}}><div style={{width:6,height:6,borderRadius:'50%',background:'#06d6a0'}}/>Online</div>
+          <div style={{color: presenceData?.online ? '#06d6a0':'rgba(255,255,255,0.3)', fontSize:11, display:'flex', alignItems:'center', gap:4}}>
+            <div style={{width:6,height:6,borderRadius:'50%', background: presenceData?.online ? '#06d6a0':'rgba(255,255,255,0.3)'}}/>
+            {presenceData?.online ? 'Online' : presenceData?.lastSeen ? `last seen ${timeAgo(presenceData.lastSeen.toDate())}` : 'Offline'}
+          </div>
         </div>
         <div style={{marginLeft:'auto',display:'flex',gap:10}}>
           <button style={{background:'rgba(255,255,255,0.06)',border:'none',borderRadius:'50%',width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
@@ -2298,12 +2344,17 @@ unsub = onSnapshot(q, (snap) => {
     </div>
   )}
               <div style={{maxWidth:'72%'}}>
-                {msg.text&&<div style={{background:isMine?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.09)',borderRadius:isMine?'18px 18px 4px 18px':'18px 18px 18px 4px',padding:'9px 14px',marginBottom:msg.mediaUrl?4:0}}>
-                  <span style={{color:'white',fontSize:14,lineHeight:1.4}}>{msg.text}</span>
-                </div>}
-                <div style={{color:'rgba(255,255,255,0.25)',fontSize:10,marginTop:3,textAlign:isMine?'right':'left',paddingLeft:isMine?0:2,paddingRight:isMine?2:0}}>
-                  {msg.ts ? msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''}
-                </div>
+                {msg.text&&<div style={{background: msg.deleted ? 'rgba(255,255,255,0.04)' : isMine?'linear-gradient(135deg,#ff2d55,#af52de)':'rgba(255,255,255,0.09)', borderRadius:isMine?'18px 18px 4px 18px':'18px 18px 18px 4px',padding:'9px 14px',marginBottom:msg.mediaUrl?4:0}}>
+  <span style={{color: msg.deleted ? 'rgba(255,255,255,0.3)':'white', fontSize:14, lineHeight:1.4, fontStyle: msg.deleted?'italic':'normal'}}>{msg.text}</span>
+</div>}
+                <div style={{ color:'rgba(255,255,255,0.25)', fontSize:10, marginTop:3, textAlign:isMine?'right':'left', paddingLeft:isMine?0:2, paddingRight:isMine?2:0, display:'flex', alignItems:'center', justifyContent:isMine?'flex-end':'flex-start', gap:3 }}>
+  <span>{msg.ts ? msg.ts.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''}</span>
+  {isMine && (
+    <span style={{ fontSize:12, color: msg.status==='seen' ? '#4fc3f7' : 'rgba(255,255,255,0.35)', letterSpacing:-2 }}>
+      {msg.status === 'sent' ? '✓' : '✓✓'}
+    </span>
+  )}
+</div>
                 {msg.mediaUrl&&msg.mediaType?.startsWith('image')&&<img src={msg.mediaUrl} alt="" style={{maxWidth:'100%',borderRadius:14,display:'block'}}/>}
                 {msg.mediaUrl&&msg.mediaType?.startsWith('video')&&<video src={msg.mediaUrl} controls style={{maxWidth:'100%',borderRadius:14,display:'block'}}/>}
                 {msg.mediaUrl&&msg.mediaType?.startsWith('audio')&&(
@@ -2313,11 +2364,32 @@ unsub = onSnapshot(q, (snap) => {
                 )}
               </div>
               {isMine && (
-                <button onClick={async()=>{ if(window.confirm('Delete this message?')) await deleteDoc(doc(db,'messages',conversationId,'msgs',msg.id)); }} style={{background:'none',border:'none',color:'rgba(255,45,85,0.4)',fontSize:10,cursor:'pointer',padding:'0 2px',alignSelf:'flex-end',marginBottom:2}}>✕</button>
+                <button onClick={async()=>{
+  const choice = window.confirm('Delete for everyone?');
+  if(choice){
+    await updateDoc(doc(db,'messages',conversationId,'msgs',msg.id), { 
+      text: '🚫 Message deleted', 
+      mediaUrl: null, 
+      deleted: true 
+    });
+  }
+}} style={{background:'none',border:'none',color:'rgba(255,45,85,0.4)',fontSize:10,cursor:'pointer',padding:'0 2px',alignSelf:'flex-end',marginBottom:2}}>✕</button>
               )}
             </div>
           );
         })}
+        {otherTyping && (
+  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+    <div style={{ width:26, height:26, borderRadius:'50%', background:otherUser?.avatarColor, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:10, overflow:'hidden' }}>
+      {otherUser?.avatarUrl ? <img src={otherUser.avatarUrl} style={{width:'100%',height:'100%',objectFit:'cover'}} alt=""/> : otherUser?.avatar}
+    </div>
+    <div style={{ background:'rgba(255,255,255,0.09)', borderRadius:'18px 18px 18px 4px', padding:'10px 14px', display:'flex', gap:4, alignItems:'center' }}>
+      {[0,1,2].map(i => (
+        <div key={i} style={{ width:6, height:6, borderRadius:'50%', background:'rgba(255,255,255,0.5)', animation:`pulse 1.2s ease ${i*0.2}s infinite` }}/>
+      ))}
+    </div>
+  </div>
+)}
         <div ref={bottomRef}/>
       </div>
 
@@ -2343,8 +2415,11 @@ unsub = onSnapshot(q, (snap) => {
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
         <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*" onChange={pickFile} style={{display:'none'}}/>
-        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
-        <button onMouseDown={startVoice} onMouseUp={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} style={{background:isRecording?'rgba(255,45,85,0.9)':'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,boxShadow:isRecording?'0 0 12px rgba(255,45,85,0.6)':'none'}}>
+        <input value={text} onChange={e=>{
+          setText(e.target.value);
+          setDoc(doc(db,'typing',conversationId),{[currentUser.id]:serverTimestamp()},{merge:true}).catch(()=>{});
+        }} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
+        <button onMouseDown={startVoice} onKeyDown={e=>e.key==='Enter'&&handleSend()} placeholder={isRecording?`🔴 ${fmt(recordSecs)}`:'Message...'} style={{flex:1,background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,padding:'11px 16px',color:'white',outline:'none',fontSize:13}}/>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isRecording?'white':'rgba(255,255,255,0.6)'} strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
         <button onClick={()=>setShowEmoji(v=>!v)} style={{background:'rgba(255,255,255,0.07)',border:'none',borderRadius:'50%',width:38,height:38,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,fontSize:18}}>😊</button>
@@ -2390,6 +2465,16 @@ const InboxPage = ({ t, users, currentUser, showToast, onViewProfile, initialTar
     );
     const unsub = onSnapshot(q, snap=>{
       setConversations(snap.docs.map(d=>({id:d.id,...d.data()})));
+      // Mark messages as delivered for this user
+snap.docs.forEach(async conv => {
+  const convId = conv.id;
+  const msgSnap = await getDocs(
+    query(collection(db,'messages',convId,'msgs'), 
+    where('to','==',currentUser.id), 
+    where('status','==','sent'))
+  );
+  msgSnap.docs.forEach(d => updateDoc(d.ref, { status: 'delivered' }).catch(()=>{}));
+});
     }, (error)=>{
       console.error('Conversations index error:', error);
       // Fallback without orderBy
@@ -2399,6 +2484,16 @@ const InboxPage = ({ t, users, currentUser, showToast, onViewProfile, initialTar
           .map(d=>({id:d.id,...d.data()}))
           .sort((a,b)=>(b.lastMessageAt?.seconds||0)-(a.lastMessageAt?.seconds||0));
         setConversations(sorted);
+        // Mark messages as delivered for this user
+snap.docs.forEach(async conv => {
+  const convId = conv.id;
+  const msgSnap = await getDocs(
+    query(collection(db,'messages',convId,'msgs'), 
+    where('to','==',currentUser.id), 
+    where('status','==','sent'))
+  );
+  msgSnap.docs.forEach(d => updateDoc(d.ref, { status: 'delivered' }).catch(()=>{}));
+});
       });
     });
     return ()=>unsub();
@@ -2593,7 +2688,6 @@ if (isCalleeProp && (!callSnap.exists() || !callSnap.data()?.offer)) {
     callSnap = await getDoc(doc(db, 'calls', callDocId.current));
     if (callSnap.exists() && callSnap.data()?.offer) break;
   }
-}
 
 let isCallee = isCalleeProp !== undefined
   ? isCalleeProp
@@ -3850,6 +3944,10 @@ setBlockedUsers(profile.blockedUsers||[]);
       localStorage.setItem('infinity_accounts', JSON.stringify(stored));
     }
     showToast(`Welcome back, @${profile.username}! 👋`,'success');
+    setDoc(doc(db,'presence',profile.id),{online:true,lastSeen:serverTimestamp()},{merge:true}).catch(()=>{});
+    window.addEventListener('beforeunload',()=>{
+      setDoc(doc(db,'presence',profile.id),{online:false,lastSeen:serverTimestamp()},{merge:true}).catch(()=>{});
+    });
     try {
       const permission = await Notification.requestPermission();
       if(permission === 'granted') {
@@ -3858,8 +3956,7 @@ setBlockedUsers(profile.blockedUsers||[]);
       }
     } catch(e) { console.log('Push notification setup failed:', e); }
   };
-
-  const handleLogout = async () => {
+const handleLogout = async () => {
     await signOut(auth);
     setCurrentUser(null);
     showToast('Logged out','info');
