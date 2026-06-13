@@ -2601,7 +2601,7 @@ if (isCallee) {
           pc.onicecandidate = (e) => {
             if (e.candidate) addDoc(collection(db, 'calls', callDocId.current, 'calleeCandidates'), e.candidate.toJSON()).catch(()=>{});
           };
-          unsubCandidates = onSnapshot(collection(db, 'calls', callDocId.current, 'callerCandidates'), (snap) => {
+unsubCandidatesRef.current = onSnapshot(collection(db, 'calls', callDocId.current, 'callerCandidates'), (snap) => {
             snap.docChanges().forEach(async (change) => {
               if (change.type === 'added') {
                 try { await pc.addIceCandidate(new RTCIceCandidate(change.doc.data())); } catch {}
@@ -2620,14 +2620,14 @@ if (isCallee) {
             callerAvatar: currentUser?.avatar, callerColor: currentUser?.avatarColor,
             calleeId: contactId, calleeName: contactName, status: 'ringing', createdAt: serverTimestamp(),
           }).catch(()=>{});
-          unsubAnswer = onSnapshot(doc(db, 'calls', callDocId.current), async (snap) => {
+unsubAnswerRef.current = onSnapshot(doc(db, 'calls', callDocId.current), async (snap) => {
             const data = snap.data();
             if (data?.answer && pc.signalingState === 'have-local-offer') {
               try { await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); setStatus('connected'); } catch {}
             }
             if (data?.status === 'declined') { setStatus('declined'); setTimeout(onClose, 1500); }
           });
-          unsubCandidates = onSnapshot(collection(db, 'calls', callDocId.current, 'calleeCandidates'), (snap) => {
+unsubCandidatesRef.current = onSnapshot(collection(db, 'calls', callDocId.current, 'calleeCandidates'), (snap) => {
             snap.docChanges().forEach(async (change) => {
               if (change.type === 'added') {
                 try { await pc.addIceCandidate(new RTCIceCandidate(change.doc.data())); } catch {}
