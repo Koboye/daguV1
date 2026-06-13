@@ -1384,20 +1384,7 @@ const NotifBellButton = ({ onOpenNotifications, currentUser }) => {
     </button>
   );
 };
-      {floatingReactions.map(r=>(
-        <div key={r.id} style={{ position:'absolute', bottom:200, left:`${r.x}%`, zIndex:60, pointerEvents:'none', fontSize:36, animation:'floatUp 1.5s ease forwards' }}>{r.emoji}</div>
-      ))}
-      {showReactions && (
-        <div onClick={e=>e.stopPropagation()} style={{ position:'absolute', bottom:160, left:'50%', transform:'translateX(-50%)', zIndex:55, background:'rgba(20,20,20,0.95)', backdropFilter:'blur(20px)', borderRadius:50, padding:'8px 12px', display:'flex', gap:4, border:'1px solid rgba(255,255,255,0.12)', animation:'popInBounce 0.3s ease' }}>
-          {REACTIONS.map(emoji=>(
-            <button key={emoji} onClick={()=>handleReact(emoji)} style={{ background:'none', border:'none', fontSize:28, cursor:'pointer', padding:'4px 6px', borderRadius:30, transition:'transform 0.15s' }}
-              onMouseEnter={e=>e.currentTarget.style.transform='scale(1.4)'}
-              onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}
-            >{emoji}</button>
-          ))}
-        </div>
-      )}
-      
+
       
 /* ─────────────── HOME FEED ─────────────── */
 const HomeFeed = ({ t, videos, onLike, onComment, onShare, onFollow, onMessage, onVoiceCall, onVideoCall, onDuet, onStitch, onSaveSound, followed, showToast, onLive, currentUser, onViewProfile, onOpenSearch, onOpenNotifications, blockedUsers, onBlock }) => {
